@@ -1,0 +1,16 @@
+add_executable(aegis_demo main.cpp)
+
+if(AEGIS_WINDOWED)
+    target_compile_definitions(aegis_demo PRIVATE AEGIS_WINDOWED=1)
+    target_link_libraries(aegis_demo PRIVATE aegis::vk aegis::core glfw)
+    if(AEGIS_GLFW_NULL_PLATFORM)
+        target_compile_definitions(aegis_demo PRIVATE AEGIS_GLFW_NULL_PLATFORM=1)
+    else()
+        target_compile_definitions(aegis_demo PRIVATE AEGIS_GLFW_NULL_PLATFORM=0)
+    endif()
+else()
+    target_compile_definitions(aegis_demo PRIVATE AEGIS_WINDOWED=0 AEGIS_GLFW_NULL_PLATFORM=0)
+    target_link_libraries(aegis_demo PRIVATE aegis::core)
+endif()
+
+aegis_set_warnings(aegis_demo)
