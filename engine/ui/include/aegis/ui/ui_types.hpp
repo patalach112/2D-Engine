@@ -28,9 +28,9 @@ enum class TextAlign : core::u8 { Left, Center, Right };
 /// which is the painter's draw order. Positions are pixels, top-left origin.
 struct UiDrawItem {
     enum Kind : core::u8 { Rect, Glyph } kind = Rect;
-    UiRect rect{};                    ///< Rect: the rectangle. Glyph: the glyph cell.
+    UiRect rect{};                    ///< Rect: the rectangle. Glyph: the glyph quad (top-left origin).
     UiColor color{};
-    std::array<core::u8, 7> rows{};   ///< Glyph only: 5-bit row masks, top row first
+    std::array<core::f32, 4> uv{};    ///< Glyph only: atlas UV rect {u0, v0, u1, v1}
 };
 
 /// FNV-1a hash — stable widget ids across frames and builds.

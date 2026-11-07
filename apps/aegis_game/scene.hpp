@@ -11,6 +11,7 @@
 #include <aegis/render/camera_rig.hpp>
 #include <aegis/ui/ui_context.hpp>
 #include <aegis/ui/ui_input.hpp>
+#include <aegis/ui/font_atlas.hpp>
 #include <aegis/renderer2d/batch_renderer.hpp>
 
 #include "game_session.hpp"
@@ -26,6 +27,7 @@ struct SceneState {
     aegis::render::CameraRig vab_rig;   ///< fixed VAB framing rig (wheel zoom)
     aegis::render::CameraRig flight_rig;
     aegis::render::CameraRig map_rig;
+    aegis::ui::FontAtlas font;   ///< baked once at startup; uploaded by the app to the GL
     aegis::ui::UiContext ui;
     bool delete_mode = false;           ///< VAB: click deletes instead of placing
     bool flight_rig_seeded = false;     ///< re-seed camera on launch / reset

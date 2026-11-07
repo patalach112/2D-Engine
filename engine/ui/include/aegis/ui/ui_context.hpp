@@ -12,7 +12,7 @@
 #pragma once
 
 #include <aegis/core/types.hpp>
-#include <aegis/ui/font.hpp>
+#include <aegis/ui/font_atlas.hpp>
 #include <aegis/ui/ui_input.hpp>
 #include <aegis/ui/ui_types.hpp>
 
@@ -31,6 +31,14 @@ struct UiButtonStyle {
 
 class UiContext {
 public:
+    /// `font` must outlive the context; pass a shared FontAtlas (or nullptr
+    /// while its bake is pending — text() then draws nothing).
+    UiContext() noexcept = default;
+    explicit UiContext(const FontAtlas& font) noexcept { set_font(font); }
+
+    /// Attaches the baked font atlas (safe to call once at startup).
+    void set_font(const FontAtlas& font) noexcept { font_ = &font; }
+
     /// Resets per-frame state and ingests the input snapshot + viewport size.
     void begin_frame(const UiInput& input, core::f32 viewport_width_px, core::f32 viewport_height_px) noexcept;
 
@@ -42,8 +50,12 @@ public:
     void rect_outline(core::f32 x, core::f32 y, core::f32 w, core::f32 h, UiColor color,
                       core::f32 thickness_px = 1.0f) noexcept;
     /// Text; x is the anchor (left edge for Left, center for Center, right edge for Right).
+    /// `size_px` is the em size. Pixel width is available via text_width_px().
     void text(core::f32 x, core::f32 y_top, core::f32 size_px, std::string_view string, UiColor color,
-              TextAlign align = TextAlign::Left) noexcept;
+              TextAlign align = TextAlign::Left, FontWeight weight = FontWeight::Regular) noexcept;
+    /// Width of `string` in pixels at `size_px` (per-weight advances, exact).
+    [[nodiscard]] core::f32 text_width_px(std::string_view string, core::f32 size_px,
+                                          FontWeight weight = FontWeight::Regular) const noexcept;
     /// Translucent underlay + panel fill + border — the standard panel chrome.
     void panel(core::f32 x, core::f32 y, core::f32 w, core::f32 h, UiColor fill,
                UiColor border) noexcept;
@@ -95,6 +107,7 @@ private:
     core::f32 viewport_height_ = 0.0f;
     core::u64 hot_ = 0;    ///< id under the cursor (0 == none)
     core::u64 active_ = 0; ///< id captured by a press (0 == none)
+    const FontAtlas* font_ = nullptr;  ///< baked atlas (non-owning); nullptr -> text() is a no-op
     std::vector<UiDrawItem> items_;
 };
 

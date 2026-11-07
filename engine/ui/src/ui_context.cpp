@@ -9,6 +9,7 @@ namespace aegis::ui {
 using core::f32;
 
 
+
 void UiContext::begin_frame(const UiInput& input, const core::f32 viewport_width_px,
                             const core::f32 viewport_height_px) noexcept {
     input_ = input;
@@ -41,25 +42,41 @@ void UiContext::rect_outline(const core::f32 x, const core::f32 y, const core::f
     fill_rect(x + w - t, y + t, t, h - 2.0f * t, color);
 }
 
+core::f32 UiContext::text_width_px(const std::string_view string, const core::f32 size_px,
+                                   const FontWeight weight) const noexcept {
+    if (font_ == nullptr || !font_->ready()) {
+        return 0.0f;
+    }
+    return font_->measure(string, size_px, weight);
+}
+
 void UiContext::text(const core::f32 x, const core::f32 y_top, const core::f32 size_px,
-                     const std::string_view string, const UiColor color, const TextAlign align) noexcept {
-    const core::f32 advance = text_advance_px(size_px);
+                     const std::string_view string, const UiColor color, const TextAlign align,
+                     const FontWeight weight) noexcept {
+    if (font_ == nullptr || !font_->ready()) {
+        return;
+    }
+    const FontAtlas& font = *font_;
+    const core::f32 scale = size_px / font.baked_px();
     core::f32 cursor = x;
     if (align != TextAlign::Left) {
-        const core::f32 width = text_width_px(string, size_px);
+        const core::f32 width = font.measure(string, size_px, weight);
         cursor = (align == TextAlign::Center) ? x - width * 0.5f : x - width;
     }
-    for (const char ch : string) {
-        const core::u32 codepoint = static_cast<unsigned char>(ch);
-        if (codepoint >= 32 && codepoint <= 126) {
+    const core::f32 baseline = y_top + font.ascent(weight) * scale;
+    for (std::size_t i = 0; i < string.size();) {
+        const core::u32 codepoint = decode_utf8(string, i);
+        const GlyphInfo& glyph = font.glyph(weight, codepoint);
+        if (glyph.width > 0.0f && glyph.height > 0.0f) {
             UiDrawItem item;
             item.kind = UiDrawItem::Glyph;
-            item.rect = UiRect{cursor, y_top, size_px, size_px};
+            item.rect = UiRect{cursor + glyph.bearing_x * scale, baseline + glyph.bearing_y * scale,
+                               glyph.width * scale, glyph.height * scale};
             item.color = color;
-            item.rows = glyph_rows(codepoint);
+            item.uv = {glyph.u0, glyph.v0, glyph.u1, glyph.v1};
             items_.push_back(item);
         }
-        cursor += advance;
+        cursor += glyph.advance * scale;
     }
 }
 
@@ -95,7 +112,7 @@ bool UiContext::button(const core::u64 id, const core::f32 x, const core::f32 y,
     const UiColor fill = pressed ? style.active : (hovered ? style.hover : style.idle);
     fill_rect(x, y, w, h, fill);
     rect_outline(x, y, w, h, style.border, 1.0f);
-    text(x + w * 0.5f, y + (h - text_height_px(14.0f)) * 0.5f + 0.5f, 14.0f, label, style.text, TextAlign::Center);
+    text(x + w * 0.5f, y + (h - 14.0f) * 0.5f, 14.0f, label, style.text, TextAlign::Center);
     return clicked;
 }
 
@@ -116,7 +133,7 @@ bool UiContext::toggle(const core::u64 id, const core::f32 x, const core::f32 y,
     const f32 knob_x = state ? (x + w - pad - knob) : (x + pad);
     fill_rect(knob_x, y + pad, knob, knob, rgb(0.92f, 0.94f, 0.98f, 1.0f));
     if (!label.empty()) {
-        text(x + w + 6.0f, y + (h - text_height_px(14.0f)) * 0.5f, 14.0f, label, rgb(0.85f, 0.88f, 0.93f, 1.0f));
+        text(x + w + 6.0f, y + (h - 14.0f) * 0.5f, 14.0f, label, rgb(0.85f, 0.88f, 0.93f, 1.0f));
     }
     return clicked;
 }

@@ -42,7 +42,8 @@ void submit_ui(aegis::renderer2d::BatchRenderer& renderer, const aegis::renderer
             continue;
         }
         aegis::renderer2d::GlyphInstance glyph = aegis::renderer2d::make_glyph(
-            wx, wy, h, item.rows, item.color.r, item.color.g, item.color.b, item.color.a);
+            wx, wy, w, h, item.uv[0], item.uv[1], item.uv[2], item.uv[3],
+            item.color.r, item.color.g, item.color.b, item.color.a);
         renderer.draw_glyph(glyph);
     }
 }

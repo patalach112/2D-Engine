@@ -271,6 +271,8 @@ int run_windowed() {
         return exit_from_failure("batch renderer");
     }
     aegis::renderer2d::BatchRenderer renderer = std::move(renderer_result).take();
+    renderer.set_glyph_atlas(device.graphics_queue(), device.graphics_family(), scene.font.pixels(),
+                             scene.font.atlas_width(), scene.font.atlas_height());
 
     const VkCommandPoolCreateInfo pool_info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,

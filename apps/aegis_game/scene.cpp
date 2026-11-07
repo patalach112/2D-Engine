@@ -99,6 +99,9 @@ void heading_to_render(const core::f64 heading, const core::f64 com_x, const cor
 }  // namespace
 
 void scene_state_init(SceneState& state) noexcept {
+    // Bake the vector font atlas (CPU, ~milliseconds, deterministic) and hand
+    // it to the UI context — text() measures and emits against this atlas.
+    state.ui.set_font(state.font);
     state.vab_rig.snap(0.0, 5.6, 52.0f);
     state.vab_rig.camera().set_zoom_limits(28.0f, 96.0f);
     state.flight_rig.snap(0.0, 4.0, 40.0f);
