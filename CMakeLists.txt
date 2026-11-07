@@ -41,8 +41,15 @@ option(AEGIS_FORTRAN_NATIVE "Optimize Fortran kernels for the build host (-march
 set(AEGIS_FORTRAN_FOUND OFF)
 if(NOT AEGIS_ENABLE_FORTRAN STREQUAL "OFF")
     include(CheckLanguage)
+    # CheckLanguage caches CMAKE_Fortran_COMPILER (path on success, NOTFOUND on
+    # failure) and skips the probe entirely when the variable is already cached.
+    # Drop only the NOTFOUND sentinel so a machine that later gains gfortran is
+    # re-probed; explicit compiler paths from the user are preserved.
+    if(CMAKE_Fortran_COMPILER MATCHES "NOTFOUND")
+        unset(CMAKE_Fortran_COMPILER CACHE)
+    endif()
     check_language(Fortran)
-    if(CMAKE_Fortran_COMPILER_FOUND)
+    if(CMAKE_Fortran_COMPILER)  # path when enabled, NOTFOUND otherwise (per CheckLanguage docs)
         enable_language(Fortran)
         set(AEGIS_FORTRAN_FOUND ON)
     elseif(AEGIS_ENABLE_FORTRAN STREQUAL "ON")
