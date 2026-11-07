@@ -11,13 +11,17 @@
 #include <array>
 #include <vector>
 
+#include <aegis/renderer2d/line_instance.hpp>
 #include <aegis/renderer2d/sprite_instance.hpp>
 
 namespace aegis::renderer2d {
 
 /// Draw pipelines owned by the batch renderer. Particle uses additive blending
-/// (glow/energy); Sprite and UI use standard alpha blending.
-enum class PrimitiveKind : core::u32 { Sprite = 0, Particle = 1, UI = 2 };
+/// (glow/energy); Sprite, Line and UI use standard alpha blending. Line is a
+/// specialized world-space segment pipeline (orbit paths, velocity vectors);
+/// its instances are bit-compatible with SpriteInstance (see line_instance.hpp)
+/// and share the same persistently mapped instance buffers.
+enum class PrimitiveKind : core::u32 { Sprite = 0, Particle = 1, UI = 2, Line = 3 };
 
 [[nodiscard]] const char* primitive_kind_name(PrimitiveKind kind) noexcept;
 
@@ -28,6 +32,7 @@ struct BatchStats {
     core::u64 sprite_instances = 0;
     core::u64 particle_instances = 0;
     core::u64 ui_instances = 0;
+    core::u64 line_instances = 0;
     /// Accumulated over the renderer's lifetime (never reset).
     core::u64 lifetime_draw_calls = 0;
     core::u64 lifetime_instances = 0;
@@ -56,6 +61,9 @@ struct BatchRendererConfig {
 ///   kind groups if you need strict cross-kind ordering control.
 /// - Pipelines are created with dynamic viewport/scissor and Vulkan dynamic
 ///   rendering (no render pass). Pipelines are immutable after creation.
+/// - Lines are a specialized kind: one instance per world-space segment
+///   (LineInstance), expanded to a filled quad in the line vertex shader —
+///   GL line topology is not used (GL lineWidth is ignored on most drivers).
 /// - Stats are accumulated per flush() and exposed via stats(); lifetime
 ///   counters survive for the renderer's lifetime.
 ///
@@ -69,8 +77,8 @@ public:
     BatchRenderer& operator=(BatchRenderer&& other) noexcept;
 
     /// Creates the renderer: shaders are loaded from the AEGIS_SPV_DIR baked in
-    /// at build time, three pipelines are created (normal / additive / UI), and
-    /// max_frames_in_flight persistent instance buffers are allocated and mapped.
+    /// at build time, four pipelines are created (sprite / additive / UI / line),
+    /// and max_frames_in_flight persistent instance buffers are allocated and mapped.
     [[nodiscard]] static core::Result<BatchRenderer> create(
         VkDevice device,
         const VkPhysicalDeviceMemoryProperties& memory_properties,
@@ -88,6 +96,12 @@ public:
     void draw_sprite(const SpriteInstance& instance);
     void draw_particle(const SpriteInstance& instance);
     void draw_ui(const SpriteInstance& instance);
+    void draw_line(const LineInstance& instance);
+    /// Convenience overload. `thickness` is in WORLD units (use
+    /// Camera2D::world_per_pixel() * desired_px for constant screen width).
+    void draw_line(core::f32 ax, core::f32 ay, core::f32 bx, core::f32 by,
+                   core::f32 r, core::f32 g, core::f32 b, core::f32 a,
+                   core::f32 thickness, core::f32 softness);
 
     /// Closes the open batch and records viewport/scissor + one draw per
     /// closed batch into the bound command buffer (call inside dynamic
@@ -107,11 +121,12 @@ private:
 
     enum class BlendMode : core::u32 { Normal = 0, Additive = 1 };
 
-    void append(PrimitiveKind kind, const SpriteInstance& instance);
+    void append(PrimitiveKind kind, const void* instance_bytes);
     void close_open_batch();
     core::Result<void> create_pipelines();
     core::Result<VkShaderModule> load_shader_module(const char* spv_filename) const;
-    VkPipeline create_pipeline(VkShaderModule vert, VkShaderModule frag, BlendMode blend) const;
+    VkPipeline create_pipeline(VkShaderModule vert, VkShaderModule frag, BlendMode blend,
+                               core::u32 instance_stride) const;
     void destroy() noexcept;
 
     VkDevice device_ = VK_NULL_HANDLE;
@@ -119,7 +134,7 @@ private:
     BatchRendererConfig config_{};
 
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
-    std::array<VkPipeline, 3> pipelines_{};  // indexed by PrimitiveKind
+    std::array<VkPipeline, 4> pipelines_{};  // indexed by PrimitiveKind
 
     std::vector<memory::GpuBuffer> instance_buffers_;
 

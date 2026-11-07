@@ -41,12 +41,14 @@ endif()
 add_subdirectory(engine/core)        # aegis_core       — no Vulkan, no windowing
 add_subdirectory(engine/vk)          # aegis_vk         — Vulkan bootstrap (Milestone 1)
 add_subdirectory(engine/memory)      # aegis_memory     — allocators + transfer queue (Milestone 2)
-add_subdirectory(engine/renderer2d)  # aegis_renderer2d — instanced 2D batch renderer (Milestone 3)
+add_subdirectory(engine/orbit)       # aegis_orbit      — Keplerian orbital mechanics (Milestone 4)
+add_subdirectory(engine/renderer2d)  # aegis_renderer2d — instanced 2D batch renderer (Milestone 3+4)
 
 if(AEGIS_BUILD_DEMO)
     add_subdirectory(apps/aegis_demo)
     add_subdirectory(apps/aegis_roundtrip)
     add_subdirectory(apps/aegis_batch_demo)
+    add_subdirectory(apps/aegis_orbit_demo)
 endif()
 
 if(AEGIS_BUILD_TESTS)

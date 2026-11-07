@@ -4,12 +4,13 @@ Lightweight, ultra-high-performance 2D game engine for **space flight simulation
 C++20, Vulkan 1.3, clean console-style architecture (low-level core + modular renderer,
 batch rendering, offscreen PNG verification).
 
-> **Status: Milestone 3 — Universal 2D Batch Renderer** ✅ (builds clean, unit tests green)
+> **Status: Milestone 4 — Camera & Orbital Trajectory System** ✅ (builds clean, unit tests green)
 >
-> Milestones 1 (Vulkan foundation), 2 (device-local arena, staging ring, TransferQueue) and
-> 3 (instanced 2D batch renderer: sprites, particles, UI) are implemented and compile-verified
-> here. Runtime Vulkan execution (the `aegis_batch_demo` scene included) requires a machine
-> with a Vulkan 1.3 driver — see "Verification" below.
+> Milestones 1 (Vulkan foundation), 2 (device-local arena, staging ring, TransferQueue),
+> 3 (instanced 2D batch renderer: sprites, particles, UI) and 4 (2D zoom camera, Keplerian
+> orbital mechanics, specialized line-segment pipeline) are implemented and compile-verified
+> here. Runtime Vulkan execution (the `aegis_orbit_demo` solar system scene included)
+> requires a machine with a Vulkan 1.3 driver — see "Verification" below.
 
 ## Requirements
 
@@ -37,17 +38,17 @@ cmake -S . -B build/manual -DGLFW_BUILD_WAYLAND=ON -DGLFW_BUILD_X11=OFF
 # Run unit tests
 ctest --preset=debug
 
-# Run the demo (opens a window and clears it; close with the window button)
-./build/debug/apps/aegis_demo/aegis_demo
+# Run the demos (windowed)
+./build/debug/apps/aegis_demo/aegis_demo             # M1: clear loop
+./build/debug/apps/aegis_batch_demo/aegis_batch_demo # M3: batch renderer (rocket + HUD)
+./build/debug/apps/aegis_orbit_demo/aegis_orbit_demo # M4: solar system (camera zoom, orbit path, velocity vector)
 
 # Milestone 2 verification: arena → staging → transfer queue → readback → byte-compare
 ./build/debug/apps/aegis_roundtrip/aegis_roundtrip   # "ROUNDTRIP VERIFIED" on driver machines
-
-# Milestone 3 demo: instanced 2D batch renderer — starfield, rocket with
-# additive engine particles, HUD panel + pulsing gauge, built on the universal
-# instanced-quad pipeline (sprite/particle/UI pipelines)
-./build/debug/apps/aegis_batch_demo/aegis_batch_demo
 ```
+
+`aegis_orbit_demo` controls: **scroll** = cursor-anchored zoom · **WASD/arrows** = pan ·
+**F** = follow the planet · **R** = reset camera · **Esc** = quit.
 
 ### Headless / CI
 
@@ -57,8 +58,8 @@ cmake --preset=ci         # windowed backend + AEGIS_WERROR=ON (warnings-as-erro
 ```
 
 In a container without X11/Wayland dev files the windowed build still compiles end-to-end;
-glfw uses its Null platform and `aegis_demo` / `aegis_batch_demo` run as bounded smoke tests
-(120 null frames or graceful exit at the point where a Vulkan driver is required) with exit code 0.
+glfw uses its Null platform and the demos run as bounded smoke tests (120 null frames or
+graceful exit at the point where a Vulkan driver is required) with exit code 0.
 
 ## Milestones
 
@@ -66,8 +67,8 @@ glfw uses its Null platform and `aegis_demo` / `aegis_batch_demo` run as bounded
 |---|-----------|--------|
 | 1 | Foundation & Vulkan Initialization (CMake, volk, glfw, instance, device, swapchain) | ✅ done |
 | 2 | VRAM Allocator & 2D Buffers (vertex/index allocators, TransferQueue) | ✅ done |
-| 3 | Universal 2D Batch Renderer (instanced rockets/particles/UI) | ✅ this milestone |
-| 4 | Camera & Orbital Trajectory System (2D zoom camera, orbit/velocity lines) | pending |
+| 3 | Universal 2D Batch Renderer (instanced rockets/particles/UI) | ✅ done |
+| 4 | Camera & Orbital Trajectory System (2D zoom camera, orbit/velocity lines) | ✅ this milestone |
 | 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | pending |
 
 ## Repository layout
@@ -76,19 +77,23 @@ glfw uses its Null platform and `aegis_demo` / `aegis_batch_demo` run as bounded
 ├── cmake/                 # AegisDeps.cmake (pinned FetchContent), warning flags
 ├── engine/
 │   ├── core/              # aegis_core       — fixed-width types, Result<T>, logging, asserts (no Vulkan)
+│   ├── orbit/             # aegis_orbit      — Keplerian orbital mechanics (two-body, Vulkan-free)
 │   ├── vk/                # aegis_vk         — volk instance, physical-device scoring, logical device
 │   │                      #                (optional dedicated transfer queue), swapchain (+recreate),
 │   │                      #                GLFW surface
 │   ├── memory/            # aegis_memory     — FreeListAllocator (pure), device-local BufferArena,
 │   │                      #                StagingRing (persistently mapped), GpuBuffer, TransferQueue
-│   └── renderer2d/        # aegis_renderer2d — BatchRenderer (instanced quads: sprite, particle, UI),
-│                          #                make_orthographic (column-major, GLM-free), BatchStats
+│   └── renderer2d/        # aegis_renderer2d — BatchRenderer (instanced quads: sprite, particle, UI,
+│                          #                line), Camera2D (2D zoom camera), make_orthographic
+│                          #                (column-major, GLM-free), BatchStats
 ├── apps/
 │   ├── aegis_demo/        # Milestone 1 demo: window + clear loop (dynamic rendering)
 │   ├── aegis_roundtrip/   # Milestone 2 check: upload→readback→byte-compare (registered with ctest)
-│   └── aegis_batch_demo/  # Milestone 3 demo: rocket + starfield + HUD on the batch renderer
+│   ├── aegis_batch_demo/  # Milestone 3 demo: rocket + starfield + HUD on the batch renderer
+│   └── aegis_orbit_demo/  # Milestone 4 demo: sun/planet solar system; scroll-zoom camera, orbit path,
+│                          #                velocity vector, pixel-anchored HUD
 ├── tests/                 # zero-dependency unit test harness (aegis_test.hpp)
-├── shaders/               # quad.vert / quad.frag — universal instanced-quad pair (GLSL → SPIR-V)
+├── shaders/               # quad.vert|frag (sprites/particles/UI), line.vert|frag (Milestone 4) — GLSL → SPIR-V
 ├── tools/                 # reserved (Milestone 5 PNG dump)
 └── CMakePresets.json      # debug / release / ci / headless
 ```
@@ -157,19 +162,49 @@ glfw uses its Null platform and `aegis_demo` / `aegis_batch_demo` run as bounded
   breakdown (sprite/particle/ui), exposed via `BatchRenderer::stats()` and logged by the demo
   every 120 frames.
 
+## Design notes (M4)
+
+- **`Camera2D`** (`aegis_renderer2d`, Vulkan-free): world-to-screen mapping with y-up world
+  vs y-down screen coordinates. `zoom` is measured in **pixels per world unit**;
+  `world_per_pixel()` (its inverse) is used to keep screen-space element sizes constant
+  across zoom levels (line thickness in the demo is authored in pixels and converted each
+  frame). `zoom_at(cursor)` anchors the world point under the cursor during wheel zoom;
+  `pan_pixels()` follows the grab-the-world convention; zoom is clamped to
+  `[min_zoom, max_zoom]`. `view_projection()` centers an orthographic box on the camera and
+  emits the same column-major mat4 convention as `make_orthographic()`.
+- **`aegis::orbit`** (new Vulkan-free module): two-body Keplerian propagation in the world
+  XY plane. `solve_kepler()` inverts Kepler's equation with a cubic initial guess +
+  Newton–Raphson iterations (machine precision, eccentricities up to 0.9+). `state_at()`
+  yields position, velocity, radius, true/mean/eccentric anomalies with
+  `E`-param differentiation for velocity; specific orbital energy `v²/2 − μ/r` is conserved
+  (unit-tested). `sample_path()` produces an even-`E` polyline for drawing orbits.
+- **Specialized line pipeline** (`shaders/line.vert|frag`): one instance per world-space
+  segment; the vertex shader expands the segment to a filled quad (direction → perpendicular
+  normal, extend by half the thickness at both ends so polylines overlap at joints), the
+  fragment shader draws a soft band (`smoothstep` on distance from the segment axis, clamped
+  so `softness = 0` stays a hard edge). No `glLineWidth` (ignored on most drivers), no line
+  topology — pure instances.
+- **Bit-compatible instances**: `LineInstance` is exactly 40 bytes with attribute
+  offsets/locations identical to `SpriteInstance` (static-asserted), so lines share the M3
+  persistently mapped instance buffers and kind-grouped flush path. Lines are a fourth
+  `PrimitiveKind` with its own pipeline; per-kind stats include `line_instances`.
+- **`aegis_orbit_demo`**: sun + planet (a = 430 wu, e = 0.28, ω = 25°, T = 26 s) with the
+  orbit polyline, a periapsis/apoapsis-marked velocity vector (scaled to periapsis speed —
+  it visibly stretches near periapsis), a soft cyan orbit path, scroll-zoom/WASD/follow
+  controls and a pixel-anchored HUD (border + panel + speed/radius bars).
+
 ## Verification
 
 This repository's CI environment has **no Vulkan driver and no GPU**. What that means:
 
 - Everything compiles warning-free on `debug`, `ci` (`-Werror`) and `headless` presets.
-- All Vulkan-free logic (free-list allocator, Result, logging, orthographic projection, …)
-  is unit-tested — 26/26 tests pass (8,923 checks), including randomized overlap checks on
-  the allocator.
-- Driver-dependent paths (instance/device creation, swapchain, upload→readback, the batch
-  demo's scene) cannot execute without a driver. `aegis_roundtrip` performs the full
-  upload → arena → readback → byte-compare verification on any machine with a Vulkan 1.3
-  driver and prints `ROUNDTRIP VERIFIED` on success — it is registered as the `aegis_roundtrip`
-  ctest case (skips cleanly, exit 0, when no driver exists).
+- All Vulkan-free logic (allocator, Result, logging, orthographic projection, camera,
+  orbital mechanics, …) is unit-tested — 43/43 tests pass (1,963 checks), including
+  conserved orbital energy, Kepler solver round-trips and cursor-anchored zoom stability.
+- Driver-dependent paths cannot execute without a driver. `aegis_roundtrip` performs the
+  full upload → arena → readback → byte-compare verification on any machine with a
+  Vulkan 1.3 driver and prints `ROUNDTRIP VERIFIED` on success — it is registered as the
+  `aegis_roundtrip` ctest case (skips cleanly, exit 0, when no driver exists).
 
 On your machine: `cmake --preset=debug && cmake --build --preset=debug && ctest --preset=debug --output-on-failure`.
 
