@@ -40,6 +40,15 @@ BatchRenderer::BatchRenderer(BatchRenderer&& other) noexcept
       config_(other.config_),
       layout_(std::exchange(other.layout_, VK_NULL_HANDLE)),
       pipelines_(other.pipelines_),
+      glyph_set_layout_(std::exchange(other.glyph_set_layout_, VK_NULL_HANDLE)),
+      glyph_image_(std::exchange(other.glyph_image_, VK_NULL_HANDLE)),
+      glyph_image_memory_(std::exchange(other.glyph_image_memory_, VK_NULL_HANDLE)),
+      glyph_image_view_(std::exchange(other.glyph_image_view_, VK_NULL_HANDLE)),
+      glyph_sampler_(std::exchange(other.glyph_sampler_, VK_NULL_HANDLE)),
+      glyph_descriptor_pool_(std::exchange(other.glyph_descriptor_pool_, VK_NULL_HANDLE)),
+      glyph_descriptor_set_(std::exchange(other.glyph_descriptor_set_, VK_NULL_HANDLE)),
+      memory_properties_(other.memory_properties_),
+      glyph_atlas_warned_(other.glyph_atlas_warned_),
       instance_buffers_(std::move(other.instance_buffers_)),
       part_instance_buffers_(std::move(other.part_instance_buffers_)),
       extent_(other.extent_),
@@ -47,6 +56,8 @@ BatchRenderer::BatchRenderer(BatchRenderer&& other) noexcept
       lifetime_draw_calls_(other.lifetime_draw_calls_),
       lifetime_instances_(other.lifetime_instances_) {
     other.pipelines_.fill(VK_NULL_HANDLE);
+    other.memory_properties_ = VkPhysicalDeviceMemoryProperties{};
+    other.glyph_atlas_warned_ = false;
     other.stats_ = BatchStats{};
     other.lifetime_draw_calls_ = 0;
     other.lifetime_instances_ = 0;
@@ -61,12 +72,23 @@ BatchRenderer& BatchRenderer::operator=(BatchRenderer&& other) noexcept {
         layout_ = std::exchange(other.layout_, VK_NULL_HANDLE);
         pipelines_ = other.pipelines_;
         other.pipelines_.fill(VK_NULL_HANDLE);
+        glyph_set_layout_ = std::exchange(other.glyph_set_layout_, VK_NULL_HANDLE);
+        glyph_image_ = std::exchange(other.glyph_image_, VK_NULL_HANDLE);
+        glyph_image_memory_ = std::exchange(other.glyph_image_memory_, VK_NULL_HANDLE);
+        glyph_image_view_ = std::exchange(other.glyph_image_view_, VK_NULL_HANDLE);
+        glyph_sampler_ = std::exchange(other.glyph_sampler_, VK_NULL_HANDLE);
+        glyph_descriptor_pool_ = std::exchange(other.glyph_descriptor_pool_, VK_NULL_HANDLE);
+        glyph_descriptor_set_ = std::exchange(other.glyph_descriptor_set_, VK_NULL_HANDLE);
+        memory_properties_ = other.memory_properties_;
+        glyph_atlas_warned_ = other.glyph_atlas_warned_;
         instance_buffers_ = std::move(other.instance_buffers_);
         part_instance_buffers_ = std::move(other.part_instance_buffers_);
         extent_ = other.extent_;
         stats_ = other.stats_;
         lifetime_draw_calls_ = other.lifetime_draw_calls_;
         lifetime_instances_ = other.lifetime_instances_;
+        other.memory_properties_ = VkPhysicalDeviceMemoryProperties{};
+        other.glyph_atlas_warned_ = false;
         other.stats_ = BatchStats{};
         other.lifetime_draw_calls_ = 0;
         other.lifetime_instances_ = 0;
@@ -99,6 +121,7 @@ core::Result<BatchRenderer> BatchRenderer::create(const VkDevice device,
     renderer.device_ = device;
     renderer.color_format_ = color_format;
     renderer.config_ = config;
+    renderer.memory_properties_ = memory_properties;
 
     const core::u64 buffer_bytes = static_cast<core::u64>(config.max_instances) * sizeof(SpriteInstance);
     const core::u64 part_buffer_bytes = static_cast<core::u64>(config.max_instances) * sizeof(PartInstance);
@@ -283,7 +306,18 @@ void BatchRenderer::flush() {
 
     for (const Batch& batch : batches_) {
         const auto kind_index = static_cast<std::size_t>(batch.kind);
+        if (batch.kind == PrimitiveKind::Glyph && glyph_descriptor_set_ == VK_NULL_HANDLE) {
+            if (!glyph_atlas_warned_) {
+                AEGIS_LOG_WARN("[aegis] glyph batches skipped: no font atlas uploaded (set_glyph_atlas)");
+                glyph_atlas_warned_ = true;
+            }
+            continue;
+        }
         vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_[kind_index]);
+        if (batch.kind == PrimitiveKind::Glyph) {
+            vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1,
+                                    &glyph_descriptor_set_, 0, nullptr);
+        }
         vkCmdPushConstants(cmd_, layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(projection_),
                            projection_.data());
 
@@ -378,6 +412,34 @@ core::Result<void> BatchRenderer::create_pipelines() {
                                            std::string("failed to load ") + which + " SPIR-V");
     }
 
+    // Glyph pipeline set 0: one combined image sampler (the font atlas). All
+    // pipelines share the layout; only the glyph shader statically uses set 0.
+    VkDescriptorSetLayoutBinding glyph_binding{};
+    glyph_binding.binding = 0;
+    glyph_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    glyph_binding.descriptorCount = 1;
+    glyph_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    glyph_binding.pImmutableSamplers = nullptr;
+    VkDescriptorSetLayoutCreateInfo glyph_set_layout_info{};
+    glyph_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    glyph_set_layout_info.bindingCount = 1;
+    glyph_set_layout_info.pBindings = &glyph_binding;
+    if (const VkResult result = vkCreateDescriptorSetLayout(device_, &glyph_set_layout_info, nullptr,
+                                                            &glyph_set_layout_);
+        result != VK_SUCCESS) {
+        vkDestroyShaderModule(device_, vert.value(), nullptr);
+        vkDestroyShaderModule(device_, frag.value(), nullptr);
+        vkDestroyShaderModule(device_, line_vert.value(), nullptr);
+        vkDestroyShaderModule(device_, line_frag.value(), nullptr);
+        vkDestroyShaderModule(device_, part_vert.value(), nullptr);
+        vkDestroyShaderModule(device_, part_frag.value(), nullptr);
+        vkDestroyShaderModule(device_, glyph_vert.value(), nullptr);
+        vkDestroyShaderModule(device_, glyph_frag.value(), nullptr);
+        return core::Result<void>::failure(core::ErrorCode::VulkanFailure,
+                                           "vkCreateDescriptorSetLayout (glyph atlas) failed",
+                                           static_cast<core::i32>(result));
+    }
+
     VkPushConstantRange push_range{};
     push_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     push_range.offset = 0;
@@ -385,6 +447,8 @@ core::Result<void> BatchRenderer::create_pipelines() {
 
     VkPipelineLayoutCreateInfo layout_info{};
     layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layout_info.setLayoutCount = 1;
+    layout_info.pSetLayouts = &glyph_set_layout_;
     layout_info.pushConstantRangeCount = 1;
     layout_info.pPushConstantRanges = &push_range;
 
@@ -621,10 +685,349 @@ void BatchRenderer::destroy() noexcept {
         vkDestroyPipelineLayout(device_, layout_, nullptr);
         layout_ = VK_NULL_HANDLE;
     }
+    if (glyph_descriptor_pool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device_, glyph_descriptor_pool_, nullptr);
+        glyph_descriptor_pool_ = VK_NULL_HANDLE;
+        glyph_descriptor_set_ = VK_NULL_HANDLE;
+    }
+    if (glyph_sampler_ != VK_NULL_HANDLE) {
+        vkDestroySampler(device_, glyph_sampler_, nullptr);
+        glyph_sampler_ = VK_NULL_HANDLE;
+    }
+    if (glyph_image_view_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, glyph_image_view_, nullptr);
+        glyph_image_view_ = VK_NULL_HANDLE;
+    }
+    if (glyph_image_ != VK_NULL_HANDLE) {
+        vkDestroyImage(device_, glyph_image_, nullptr);
+        glyph_image_ = VK_NULL_HANDLE;
+    }
+    if (glyph_image_memory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, glyph_image_memory_, nullptr);
+        glyph_image_memory_ = VK_NULL_HANDLE;
+    }
+    if (glyph_set_layout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device_, glyph_set_layout_, nullptr);
+        glyph_set_layout_ = VK_NULL_HANDLE;
+    }
     instance_buffers_.clear();  // GpuBuffer destructors release buffer + memory
     part_instance_buffers_.clear();
     cmd_ = VK_NULL_HANDLE;
     device_ = VK_NULL_HANDLE;
+}
+
+namespace {
+
+[[nodiscard]] bool find_memory_type(const VkPhysicalDeviceMemoryProperties& props, const core::u32 type_bits,
+                                    const VkMemoryPropertyFlags required, core::u32& out) noexcept {
+    for (core::u32 i = 0; i < props.memoryTypeCount; ++i) {
+        const bool supported = (type_bits & (1u << i)) != 0;
+        const VkMemoryPropertyFlags flags = props.memoryTypes[i].propertyFlags;
+        if (supported && (flags & required) == required) {
+            out = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+void BatchRenderer::set_glyph_atlas(const VkQueue queue, const core::u32 queue_family_index,
+                                    const core::u8* const pixels, const core::u32 width, const core::u32 height) {
+    if (queue == VK_NULL_HANDLE || pixels == nullptr || width == 0 || height == 0) {
+        AEGIS_LOG_WARN("[aegis] set_glyph_atlas: invalid arguments; glyph rendering disabled");
+        return;
+    }
+    if (glyph_descriptor_set_ != VK_NULL_HANDLE) {
+        // Repeat calls happen once per capture in tools that re-render; keep it
+        // cheap and quiet (the first upload wins).
+        return;
+    }
+
+    const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height);
+
+    // 1) Host-visible staging buffer holds a tightly packed copy of the atlas.
+    VkBuffer staging = VK_NULL_HANDLE;
+    VkDeviceMemory staging_memory = VK_NULL_HANDLE;
+    {
+        VkBufferCreateInfo buffer_info{};
+        buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_info.size = bytes;
+        buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateBuffer(device_, &buffer_info, nullptr, &staging) != VK_SUCCESS) {
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: staging buffer allocation failed");
+            return;
+        }
+        VkMemoryRequirements requirements{};
+        vkGetBufferMemoryRequirements(device_, staging, &requirements);
+        u32 type_index = 0;
+        if (!find_memory_type(memory_properties_, requirements.memoryTypeBits,
+                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                              type_index)) {
+            vkDestroyBuffer(device_, staging, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: no host-visible staging memory "
+                           << "(type_bits=0x" << std::hex << requirements.memoryTypeBits << std::dec
+                           << ", heaps=" << memory_properties_.memoryHeapCount
+                           << ", types=" << memory_properties_.memoryTypeCount << ")");
+            for (u32 i = 0; i < memory_properties_.memoryTypeCount; ++i) {
+                AEGIS_LOG_INFO("[aegis]   memory type " << i << " flags=0x" << std::hex
+                               << memory_properties_.memoryTypes[i].propertyFlags << std::dec
+                               << " heap=" << memory_properties_.memoryTypes[i].heapIndex);
+            }
+            return;
+        }
+        VkMemoryAllocateInfo alloc{};
+        alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        alloc.allocationSize = requirements.size;
+        alloc.memoryTypeIndex = type_index;
+        if (vkAllocateMemory(device_, &alloc, nullptr, &staging_memory) != VK_SUCCESS) {
+            vkDestroyBuffer(device_, staging, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: staging memory allocation failed");
+            return;
+        }
+        if (vkBindBufferMemory(device_, staging, staging_memory, 0) != VK_SUCCESS) {
+            vkFreeMemory(device_, staging_memory, nullptr);
+            vkDestroyBuffer(device_, staging, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: staging memory bind failed");
+            return;
+        }
+        void* mapped = nullptr;
+        if (vkMapMemory(device_, staging_memory, 0, bytes, 0, &mapped) != VK_SUCCESS || mapped == nullptr) {
+            vkFreeMemory(device_, staging_memory, nullptr);
+            vkDestroyBuffer(device_, staging, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: staging memory map failed");
+            return;
+        }
+        std::memcpy(mapped, pixels, static_cast<std::size_t>(bytes));
+        vkUnmapMemory(device_, staging_memory);
+    }
+
+    // 2) Device-local R8 image, transfer-dst -> sampled.
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory image_memory = VK_NULL_HANDLE;
+    {
+        VkImageCreateInfo image_info{};
+        image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        image_info.imageType = VK_IMAGE_TYPE_2D;
+        image_info.format = VK_FORMAT_R8_UNORM;
+        image_info.extent = VkExtent3D{width, height, 1};
+        image_info.mipLevels = 1;
+        image_info.arrayLayers = 1;
+        image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+        image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+        image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (vkCreateImage(device_, &image_info, nullptr, &image) != VK_SUCCESS) {
+            vkFreeMemory(device_, staging_memory, nullptr);
+            vkDestroyBuffer(device_, staging, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: image allocation failed");
+            return;
+        }
+        VkMemoryRequirements requirements{};
+        vkGetImageMemoryRequirements(device_, image, &requirements);
+        u32 type_index = 0;
+        if (!find_memory_type(memory_properties_, requirements.memoryTypeBits,
+                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, type_index)) {
+            vkDestroyImage(device_, image, nullptr);
+            vkFreeMemory(device_, staging_memory, nullptr);
+            vkDestroyBuffer(device_, staging, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: no device-local image memory");
+            return;
+        }
+        VkMemoryAllocateInfo alloc{};
+        alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        alloc.allocationSize = requirements.size;
+        alloc.memoryTypeIndex = type_index;
+        if (vkAllocateMemory(device_, &alloc, nullptr, &image_memory) != VK_SUCCESS ||
+            vkBindImageMemory(device_, image, image_memory, 0) != VK_SUCCESS) {
+            if (image_memory != VK_NULL_HANDLE) {
+                vkFreeMemory(device_, image_memory, nullptr);
+            }
+            vkDestroyImage(device_, image, nullptr);
+            vkFreeMemory(device_, staging_memory, nullptr);
+            vkDestroyBuffer(device_, staging, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: image memory bind failed");
+            return;
+        }
+    }
+
+    // 3) One-time staging -> image copy with the right barriers.
+    {
+        VkCommandPoolCreateInfo pool_info{};
+        pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        pool_info.queueFamilyIndex = queue_family_index;
+        VkCommandPool pool = VK_NULL_HANDLE;
+        if (vkCreateCommandPool(device_, &pool_info, nullptr, &pool) != VK_SUCCESS) {
+            vkDestroyImage(device_, image, nullptr);
+            vkFreeMemory(device_, image_memory, nullptr);
+            vkFreeMemory(device_, staging_memory, nullptr);
+            vkDestroyBuffer(device_, staging, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: transient command pool creation failed");
+            return;
+        }
+        VkCommandBufferAllocateInfo cmd_info{};
+        cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmd_info.commandPool = pool;
+        cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmd_info.commandBufferCount = 1;
+        VkCommandBuffer cmd = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(device_, &cmd_info, &cmd) == VK_SUCCESS) {
+            VkCommandBufferBeginInfo begin{};
+            begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            vkBeginCommandBuffer(cmd, &begin);
+
+            VkImageMemoryBarrier to_transfer{};
+            to_transfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            to_transfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            to_transfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            to_transfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            to_transfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            to_transfer.image = image;
+            to_transfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            to_transfer.subresourceRange.baseMipLevel = 0;
+            to_transfer.subresourceRange.levelCount = 1;
+            to_transfer.subresourceRange.baseArrayLayer = 0;
+            to_transfer.subresourceRange.layerCount = 1;
+            to_transfer.srcAccessMask = 0;
+            to_transfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                                 0, nullptr, 0, nullptr, 1, &to_transfer);
+
+            VkBufferImageCopy copy{};
+            copy.bufferOffset = 0;
+            copy.bufferRowLength = 0;    // tightly packed
+            copy.bufferImageHeight = 0;
+            copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copy.imageSubresource.layerCount = 1;
+            copy.imageExtent = VkExtent3D{width, height, 1};
+            vkCmdCopyBufferToImage(cmd, staging, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+
+            VkImageMemoryBarrier to_sampled = to_transfer;
+            to_sampled.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            to_sampled.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            to_sampled.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            to_sampled.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+                                 0, nullptr, 0, nullptr, 1, &to_sampled);
+            vkEndCommandBuffer(cmd);
+
+            VkSubmitInfo submit{};
+            submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit.commandBufferCount = 1;
+            submit.pCommandBuffers = &cmd;
+            if (vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS ||
+                vkQueueWaitIdle(queue) != VK_SUCCESS) {
+                AEGIS_LOG_WARN("[aegis] set_glyph_atlas: atlas upload submit failed");
+                vkDestroyCommandPool(device_, pool, nullptr);
+                vkDestroyImage(device_, image, nullptr);
+                vkFreeMemory(device_, image_memory, nullptr);
+                vkFreeMemory(device_, staging_memory, nullptr);
+                vkDestroyBuffer(device_, staging, nullptr);
+                return;
+            }
+        } else {
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: command buffer allocation failed");
+        }
+        vkDestroyCommandPool(device_, pool, nullptr);
+    }
+
+    // staging resources are no longer needed
+    vkFreeMemory(device_, staging_memory, nullptr);
+    vkDestroyBuffer(device_, staging, nullptr);
+
+    // 4) view + linear sampler (linear filtering of 8-bit coverage = smooth edges)
+    VkImageView view = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE;
+    {
+        VkImageViewCreateInfo view_info{};
+        view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_info.image = image;
+        view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_info.format = VK_FORMAT_R8_UNORM;
+        view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        view_info.subresourceRange.levelCount = 1;
+        view_info.subresourceRange.layerCount = 1;
+        if (vkCreateImageView(device_, &view_info, nullptr, &view) != VK_SUCCESS) {
+            vkDestroyImage(device_, image, nullptr);
+            vkFreeMemory(device_, image_memory, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: image view creation failed");
+            return;
+        }
+        VkSamplerCreateInfo sampler_info{};
+        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_info.magFilter = VK_FILTER_LINEAR;
+        sampler_info.minFilter = VK_FILTER_LINEAR;
+        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.minLod = 0.0f;
+        sampler_info.maxLod = 0.0f;
+        sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+        if (vkCreateSampler(device_, &sampler_info, nullptr, &sampler) != VK_SUCCESS) {
+            vkDestroyImageView(device_, view, nullptr);
+            vkDestroyImage(device_, image, nullptr);
+            vkFreeMemory(device_, image_memory, nullptr);
+            AEGIS_LOG_WARN("[aegis] set_glyph_atlas: sampler creation failed");
+            return;
+        }
+    }
+
+    // 5) descriptor pool (exactly one set) + set + write
+    VkDescriptorPoolSize pool_size{};
+    pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    pool_size.descriptorCount = 1;
+    VkDescriptorPoolCreateInfo pool_info{};
+    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_info.maxSets = 1;
+    pool_info.poolSizeCount = 1;
+    pool_info.pPoolSizes = &pool_size;
+    if (vkCreateDescriptorPool(device_, &pool_info, nullptr, &glyph_descriptor_pool_) != VK_SUCCESS) {
+        vkDestroySampler(device_, sampler, nullptr);
+        vkDestroyImageView(device_, view, nullptr);
+        vkDestroyImage(device_, image, nullptr);
+        vkFreeMemory(device_, image_memory, nullptr);
+        AEGIS_LOG_WARN("[aegis] set_glyph_atlas: descriptor pool creation failed");
+        return;
+    }
+    VkDescriptorSetAllocateInfo set_info{};
+    set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    set_info.descriptorPool = glyph_descriptor_pool_;
+    set_info.descriptorSetCount = 1;
+    set_info.pSetLayouts = &glyph_set_layout_;
+    if (vkAllocateDescriptorSets(device_, &set_info, &glyph_descriptor_set_) != VK_SUCCESS) {
+        vkDestroyDescriptorPool(device_, glyph_descriptor_pool_, nullptr);
+        glyph_descriptor_pool_ = VK_NULL_HANDLE;
+        vkDestroySampler(device_, sampler, nullptr);
+        vkDestroyImageView(device_, view, nullptr);
+        vkDestroyImage(device_, image, nullptr);
+        vkFreeMemory(device_, image_memory, nullptr);
+        AEGIS_LOG_WARN("[aegis] set_glyph_atlas: descriptor set allocation failed");
+        return;
+    }
+    VkDescriptorImageInfo image_info{};
+    image_info.sampler = sampler;
+    image_info.imageView = view;
+    image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = glyph_descriptor_set_;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &image_info;
+    vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+
+    glyph_image_ = image;
+    glyph_image_memory_ = image_memory;
+    glyph_image_view_ = view;
+    glyph_sampler_ = sampler;
+    AEGIS_LOG_INFO("[aegis] font atlas uploaded: " << width << "x" << height << " R8");
 }
 
 }  // namespace aegis::renderer2d

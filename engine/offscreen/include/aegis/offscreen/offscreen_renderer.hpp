@@ -52,6 +52,12 @@ public:
         const std::array<core::f32, 16>& view_projection,
         const std::function<void(renderer2d::BatchRenderer&)>& draw);
 
+    /// Forwards to the internal batch renderer (uploads the font atlas so
+    /// captures can draw text). Call once before the first capture.
+    void set_glyph_atlas(const core::u8* pixels, core::u32 width, core::u32 height) {
+        batch_renderer_.set_glyph_atlas(queue_, queue_family_, pixels, width, height);
+    }
+
     [[nodiscard]] core::u32 width() const noexcept { return config_.width; }
     [[nodiscard]] core::u32 height() const noexcept { return config_.height; }
 

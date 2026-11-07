@@ -113,6 +113,13 @@ public:
     void draw_line(const LineInstance& instance);
     void draw_glyph(const GlyphInstance& instance);
     void draw_part(const PartInstance& instance);
+    /// Uploads the CPU-baked font coverage atlas (R8) as the glyph pipeline's
+    /// set-0 texture. Call once, after create() and before the first frame
+    /// that draws text. `pixels` is copied synchronously (blocking upload).
+    /// Until this is called, glyph batches are skipped with a one-time warning
+    /// (text is invisible) — everything else renders normally.
+    void set_glyph_atlas(VkQueue queue, core::u32 queue_family_index, const core::u8* pixels,
+                         core::u32 width, core::u32 height);
     /// Convenience overload. `thickness` is in WORLD units (use
     /// Camera2D::world_per_pixel() * desired_px for constant screen width).
     void draw_line(core::f32 ax, core::f32 ay, core::f32 bx, core::f32 by,
@@ -153,6 +160,15 @@ private:
 
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
     std::array<VkPipeline, 6> pipelines_{};  // indexed by PrimitiveKind
+    VkDescriptorSetLayout glyph_set_layout_ = VK_NULL_HANDLE;  ///< set 0: sampler2D coverage atlas
+    VkImage glyph_image_ = VK_NULL_HANDLE;
+    VkDeviceMemory glyph_image_memory_ = VK_NULL_HANDLE;
+    VkImageView glyph_image_view_ = VK_NULL_HANDLE;
+    VkSampler glyph_sampler_ = VK_NULL_HANDLE;
+    VkDescriptorPool glyph_descriptor_pool_ = VK_NULL_HANDLE;
+    VkDescriptorSet glyph_descriptor_set_ = VK_NULL_HANDLE;  ///< VK_NULL until set_glyph_atlas()
+    VkPhysicalDeviceMemoryProperties memory_properties_{};
+    bool glyph_atlas_warned_ = false;  ///< one-shot log guard
 
     std::vector<memory::GpuBuffer> instance_buffers_;      // 40-byte class
     std::vector<memory::GpuBuffer> part_instance_buffers_; // 56-byte class

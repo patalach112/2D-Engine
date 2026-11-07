@@ -156,7 +156,7 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 │   │                      #                (16 built-in templates, plumes, snap highlights), planet/sky
 │   │                      #                painter, UI bridge (M9)
 │   └── ui/                # aegis_ui         — immediate-mode UI kernel (panels, buttons, bars, toggles,
-│                          #                sliders, text) + embedded 5x7 bitmap font (M9)
+│                          #                sliders, text) + vector font atlas (M10.5: JetBrains Mono, OFL)
 ├── apps/
 │   ├── aegis_demo/        # Milestone 1 demo: window + clear loop (dynamic rendering)
 │   ├── aegis_roundtrip/   # Milestone 2 check: upload→readback→byte-compare (registered with ctest)

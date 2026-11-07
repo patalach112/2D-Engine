@@ -144,6 +144,7 @@ int main(int argc, char** argv) {
         game::SceneState state{};
         game::scene_state_init(state);
         game::scene_set_viewport(state, static_cast<core::f32>(kWidth), static_cast<core::f32>(kHeight));
+        offscreen.set_glyph_atlas(state.font.pixels(), state.font.atlas_width(), state.font.atlas_height());
 
         const std::string path = prefix + "aegis_game_" + frame.suffix + ".png";
         // Warm-up pass: render once against a throwaway capture so rig seeding
