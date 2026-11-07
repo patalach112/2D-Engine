@@ -102,8 +102,9 @@ if(AEGIS_WINDOWED)
     target_link_libraries(aegis_engine PRIVATE aegis::glfw)
 endif()
 target_link_libraries(aegis_engine PRIVATE aegis::miniz)   # PNG deflate — headers stay private
-# Unix: keep the static 3rd-party archives (volk/glfw/miniz) out of the
-# dynamic symbol table entirely — only AEGIS_API symbols cross the boundary.
+# Unix: keep the static 3rd-party archives (volk/miniz) out of the dynamic
+# symbol table entirely — only AEGIS_API symbols cross the boundary.
+# (GLFW is a shared library, see cmake/AegisDeps.cmake.)
 if(UNIX AND NOT APPLE)
     target_link_options(aegis_engine PRIVATE -Wl,--exclude-libs,ALL)
 endif()
@@ -145,11 +146,37 @@ set(_aegis_engine_consumers
     aegis_game aegis_demo aegis_roundtrip aegis_batch_demo aegis_orbit_demo
     aegis_rocket_dump aegis_assembly_check aegis_flight_check aegis_game_check aegis_craft_check
     aegis_tests)
+# GLFW is a shared library (see cmake/AegisDeps.cmake): on Windows the loader
+# searches the exe's directory, so glfw3.dll must sit next to every consumer
+# just like aegis_engine.dll does. (On Linux the build-tree rpath resolves it
+# from the glfw build dir; the copy is belt-and-braces.)
+set(_aegis_glfw_target "glfw")
 foreach(_consumer IN LISTS _aegis_engine_consumers)
     if(TARGET ${_consumer})
         add_custom_command(TARGET aegis_engine POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aegis_engine> $<TARGET_FILE_DIR:${_consumer}>
             COMMENT "aegis_engine -> ${_consumer} output dir")
+        if(AEGIS_WINDOWED AND TARGET ${_aegis_glfw_target})
+            if(WIN32)
+                add_custom_command(TARGET aegis_engine POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${_aegis_glfw_target}> $<TARGET_FILE_DIR:${_consumer}>
+                    COMMENT "glfw3.dll -> ${_consumer} output dir")
+            elseif(APPLE)
+                # macOS resolves via install_name/BUILD_RPATH; a plain copy is
+                # enough, a .so-style SONAME symlink would be meaningless.
+                add_custom_command(TARGET aegis_engine POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${_aegis_glfw_target}> $<TARGET_FILE_DIR:${_consumer}>
+                    COMMENT "glfw (shared) -> ${_consumer} output dir")
+            else()
+                # glfw's SONAME is libglfw.so.$SOVERSION; the loader wants the
+                # SONAME, not the real VERSIONED filename.
+                get_target_property(_glfw_soversion ${_aegis_glfw_target} SOVERSION)
+                add_custom_command(TARGET aegis_engine POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${_aegis_glfw_target}> $<TARGET_FILE_DIR:${_consumer}>
+                    COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE_NAME:${_aegis_glfw_target}> $<TARGET_FILE_DIR:${_consumer}>/libglfw.so.${_glfw_soversion}
+                    COMMENT "glfw (shared) -> ${_consumer} output dir")
+            endif()
+        endif()
     endif()
 endforeach()
 
