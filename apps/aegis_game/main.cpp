@@ -284,6 +284,16 @@ int run_windowed() {
         return exit_from_failure("instance/surface");
     }
     aegis::vk::Instance instance = std::move(bringup->first);
+    // This binary makes raw Vulkan calls below (command pool, sync objects, the
+    // frame loop). volk is a *static* library, so the exe carries its own
+    // dispatch table — which is populated only if we initialise it ourselves.
+    // (The engine's copy is initialised independently; each resolves its PFNs
+    // from the same loader, so the two tables are interoperable.)
+    if (volkInitialize() != VK_SUCCESS) {
+        AEGIS_LOG_ERROR("[aegis] volkInitialize failed in the application (loader vanished?)");
+        return exit_from_failure("volk");
+    }
+    volkLoadInstance(instance.handle());
     aegis::vk::GlfwSurface surface = std::move(bringup->second);
 
     auto gpu_result = aegis::vk::select_physical_device(instance.handle(), surface.handle());
@@ -302,6 +312,7 @@ int run_windowed() {
         return exit_from_failure("device");
     }
     aegis::vk::Device device = std::move(device_result).take();
+    volkLoadDevice(device.handle());  // populate the exe's device-level PFNs
 
     aegis::vk::SwapchainConfig swapchain_config;
     swapchain_config.surface = surface.handle();
