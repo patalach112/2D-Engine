@@ -103,6 +103,11 @@ cmake --preset=ci         # windowed backend + AEGIS_WERROR=ON (warnings-as-erro
 In a container without X11/Wayland dev files the windowed build still compiles end-to-end;
 glfw uses its Null platform and the demos run as bounded smoke tests (120 null frames or
 graceful exit at the point where a Vulkan driver is required) with exit code 0.
+Windows and macOS always build their native glfw platform (Win32/Cocoa); the Null-platform
+fallback only applies to X11/Wayland-less Linux hosts. (Before v0.2.0 the fallback
+unconditionally forced the Null platform on Windows too, which returned no required Vulkan
+instance extensions and failed at `glfwCreateWindowSurface` with
+`VK_ERROR_EXTENSION_NOT_PRESENT`.)
 `aegis_rocket_dump` needs no window at all — offscreen rendering works on any headless
 machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 

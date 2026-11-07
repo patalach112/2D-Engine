@@ -2,6 +2,7 @@
 
 #include <aegis/core/log.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -69,7 +70,22 @@ core::Result<Instance> Instance::create(const InstanceConfig& config) {
                 "." + std::to_string(VK_API_VERSION_MINOR(api_version)) + ")");
     }
 
+    // Window-surface extensions returned by GLFW (VK_KHR_surface plus the
+    // platform pair, e.g. VK_KHR_win32_surface on Windows) must reach
+    // vkCreateInstance verbatim — glfwCreateWindowSurface resolves
+    // vkCreateWin32SurfaceKHR against this list and fails with
+    // VK_ERROR_EXTENSION_NOT_PRESENT otherwise. Copy them exactly, drop stray
+    // nullptrs, and log what the instance is created with.
     std::vector<const char*> extensions = config.required_extensions;
+    extensions.erase(std::remove(extensions.begin(), extensions.end(), nullptr), extensions.end());
+    if (extensions.empty()) {
+        AEGIS_LOG_WARN("[aegis] required_extensions is empty — the GLFW build likely has no Vulkan "
+                       "windowing platform (Null platform fallback); window surface creation will fail");
+    } else {
+        for (const char* ext : extensions) {
+            AEGIS_LOG_INFO("[aegis] enabling instance extension: " << ext);
+        }
+    }
 
     bool enable_validation = config.enable_validation;
     if (enable_validation && !validation_layer_available()) {

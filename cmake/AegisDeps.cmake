@@ -81,13 +81,32 @@ if(AEGIS_WINDOWED)
         endif()
     endif()
 
-    if(NOT _aegis_have_x11 AND NOT _aegis_have_wayland)
+    # Windows (Win32) and macOS (Cocoa) always have a native desktop platform —
+    # pkg-config detection never applies there, and silently forcing the Null
+    # platform would starve the Vulkan instance of VK_KHR_surface /
+    # VK_KHR_win32_surface (glfwGetRequiredInstanceExtensions returns nothing),
+    # making glfwCreateWindowSurface fail with VK_ERROR_EXTENSION_NOT_PRESENT.
+    if(WIN32 OR APPLE)
+        set(AEGIS_GLFW_NULL_PLATFORM 0)
+        if(WIN32)
+            set(GLFW_BUILD_WIN32     ON CACHE BOOL "" FORCE)
+            set(GLFW_BUILD_COCOA     OFF CACHE BOOL "" FORCE)
+        else()
+            set(GLFW_BUILD_COCOA     ON CACHE BOOL "" FORCE)
+            set(GLFW_BUILD_WIN32     OFF CACHE BOOL "" FORCE)
+        endif()
+        set(GLFW_BUILD_X11      OFF CACHE BOOL "" FORCE)
+        set(GLFW_BUILD_WAYLAND  OFF CACHE BOOL "" FORCE)
+        set(GLFW_BUILD_NULL     OFF CACHE BOOL "" FORCE)
+        message(STATUS "Aegis2D: native desktop platform — building glfw with the ${CMAKE_SYSTEM_NAME} backend")
+    elseif(NOT _aegis_have_x11 AND NOT _aegis_have_wayland)
         set(AEGIS_GLFW_NULL_PLATFORM 1)
         set(GLFW_BUILD_NULL     ON  CACHE BOOL "" FORCE)
         set(GLFW_BUILD_X11      OFF CACHE BOOL "" FORCE)
         set(GLFW_BUILD_WAYLAND  OFF CACHE BOOL "" FORCE)
         message(STATUS "Aegis2D: X11/Wayland dev packages not found — building glfw with the Null platform (windowed apps run as bounded smoke tests)")
     else()
+        set(AEGIS_GLFW_NULL_PLATFORM 0)
         set(GLFW_BUILD_NULL     OFF CACHE BOOL "" FORCE)
         set(GLFW_BUILD_X11      ${_aegis_have_x11}   CACHE BOOL "" FORCE)
         set(GLFW_BUILD_WAYLAND  ${_aegis_have_wayland} CACHE BOOL "" FORCE)
