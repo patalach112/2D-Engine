@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(Aegis2D
-        VERSION 0.1.0
+        VERSION 0.2.0
         DESCRIPTION "Lightweight, ultra-high-performance 2D engine for space flight simulation (C++20 / Vulkan 1.3)"
         LANGUAGES C CXX)
 

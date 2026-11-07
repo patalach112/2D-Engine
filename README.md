@@ -4,7 +4,7 @@ Lightweight, ultra-high-performance 2D game engine for **space flight simulation
 C++20, Vulkan 1.3, clean console-style architecture (low-level core + modular renderer,
 batch rendering, offscreen PNG verification).
 
-> **Status: Milestone 9 — The Game: VAB → Flight → Orbital Map** ✅ (builds clean, unit tests green)
+> **Status: Milestone 10 — Data & Prediction: Serialization, Impact Predictor, New Parts** ✅ (v0.2.0)
 >
 > Phase-1 core exists (M1–M6 compile-verified; windowed Vulkan runs need a Vulkan 1.3 driver).
 > Milestone 7 adds the SFS-style part system (grid assembly, staging, splits, mass/CoM/Izz).
@@ -16,6 +16,11 @@ batch rendering, offscreen PNG verification).
 > rigid-body physics, and toggle a live Keplerian **orbital map** (M) while it flies. Three
 > built-in craft presets, zero external assets (every pixel is procedural), unit-tested
 > headlessly and driver-verified on your machine — see "Verification" below.
+> **Milestone 10 makes the simulation persistent and predictable**: `engine/serial` (a strict,
+> hand-rolled JSON subset) round-trips craft files byte-stably; the map gains a ballistic
+> **impact prediction** (RK4 integration, impact marker + live countdown) alongside Keplerian
+> T+AP/T+PE readouts; and the registry grows reaction-control blocks, a monoprop tank and
+> landing legs — while jettisoned fairings now fly off as ballistic free-flyers.
 
 ## Requirements
 
@@ -67,6 +72,7 @@ ctest --preset=debug
 
 # Milestone 9: render the game's scenes offscreen (VAB, t+2 s flight, orbital map) to PNGs
 ./build/debug/tools/aegis_game_check/aegis_game_check                    # aegis_game_vab.png / _flight.png / _map.png
+./build/debug/tools/aegis_game_check/aegis_game_check out 10              # optional 2nd arg: simulated seconds before the shots
 
 # Milestone 9: play the game (windowed)
 ./build/debug/apps/aegis_game/aegis_game                                 # Aegis2D — Vehicle Assembly Building
@@ -112,7 +118,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 | 6 | Fortran Math Bridge & Kepler Solver (Fortran kernels behind a C ABI; C++ fallback) | ✅ done |
 | 7 | Part System & Vehicle Assembly (grid snap, staging, mass CoM) | ✅ done |
 | 8 | Physics Integration & Flight Dynamics (RK4, propellant drain, separation Δv, ballistic stages, contact) | ✅ done |
-| 9 | The Game: VAB → Flight → Orbital Map (`aegis_game`, craft presets, HUD, map overlay, `aegis_game_check`) | ✅ done (this milestone) |
+| 9 | The Game: VAB → Flight → Orbital Map (`aegis_game`, craft presets, HUD, map overlay, `aegis_game_check`) | ✅ done |
+| 10 | Data & Prediction (`engine/serial` JSON craft round-trip, ballistic impact predictor + T+AP/T+PE map readouts, RCS/monoprop/landing legs, fairing ballistics) | ✅ done (this milestone) |
 
 ## Repository layout
 
@@ -125,6 +132,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 │   ├── physics/           # aegis_physics    — rigid-body flight dynamics: fixed-step RK4, propellant
 │   │                      #                drain + flameout, separation impulses (momentum-exact), ballistic
 │   │                      #                detached stages, drag/atmosphere, contact, events (M8)
+│   ├── serial/            # aegis_serial     — strict JSON subset (parse/emit/validate) + craft
+│   │                      #                save/load round-trip; zero external dependencies (M10)
 │   ├── orbit/             # aegis_orbit      — Keplerian orbital mechanics (two-body, Vulkan-free;
 │                          #                Fortran kernels via iso_c_binding when gfortran is found,
 │                          #                C++ fallback otherwise) + orbit_c.h C ABI + internal.hpp
@@ -139,7 +148,7 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 │   ├── offscreen/         # aegis_offscreen  — surface-free offscreen renderer (RGBA8 → readback),
 │   │                      #                PNG writer (miniz DEFLATE + CRC-32)
 │   ├── render/            # aegis_render     — CameraRig (smooth-zoom/target), procedural part renderer
-│   │                      #                (13 built-in templates, plumes, snap highlights), planet/sky
+│   │                      #                (16 built-in templates, plumes, snap highlights), planet/sky
 │   │                      #                painter, UI bridge (M9)
 │   └── ui/                # aegis_ui         — immediate-mode UI kernel (panels, buttons, bars, toggles,
 │                          #                sliders, text) + embedded 5x7 bitmap font (M9)
@@ -385,6 +394,57 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
   patched conics on the vehicle side, launch pads, auto-sized drag area, attitude control
   laws beyond the pitch/torque hook, fin aerodynamics, Δv estimation helpers.
 
+## Design notes (M10)
+
+- **`aegis_serial` — hand-rolled JSON, no dependencies**: the craft save/load round-trip needed a
+  JSON layer, and the project takes zero external code, so `aegis_serial` implements a **strict
+  subset** of JSON (objects, arrays, strings, numbers, booleans, null) with deterministic
+  parse/emit semantics — duplicate keys rejected, number grammar validated on parse (no
+  `1e` infinities sneaking into craft files), strings re-emitted with minimal deterministic
+  escaping, and a stable key order on emit so save→load→save is byte-identical. Round-trip
+  tools (`aegis_craft_check`) pin that property against checked-in craft files.
+- **Craft files are data, not code**: save/load validates against the built-in template
+  registry at load — unknown template keys are hard errors, never silent blobs; propellant is
+  stored as the exact float payload it had in memory.
+- **Ballistic impact prediction (`aegis::orbit::predict_ballistic`)**: fixed-step RK4 over the
+  two-body equation of motion with a **bracketed-bisection refinement** of the surface
+  crossing. Deterministic by construction (pure function of `position`, `velocity`, `mu`,
+  `radius`, `max_t`). Short suborbital hops (constant-g estimate ≤ 300 s) integrate at ~300
+  steps per crossing with a per-step arc; longer horizons use `max_t / 1200`; the loop is
+  hard-capped at 4096 iterations. The arc polyline never contains a below-surface sample —
+  the crossing is detected **before** the arc point is recorded — so the map draws a clean
+  parabola that ends exactly at the impact marker. Unit tests cover hang time (≈ 2v/g₀ within
+  2 %), a 45° throw vs flat-earth range (3 %), escape trajectories, byte-for-byte determinism
+  across runs, and degenerate inputs.
+- **Orbital map**: closed Keplerian orbits get the classic ellipse (cool glow) plus **T+AP /
+  T+PE** rows derived from the mean anomaly M = fmod(n·(t − t_periapsis), 2π) with n from the
+  mean motion: T+PE = (2π − M)/n and T+AP = (π − M)/n (wrapped into [0, period) — 0 exactly at
+  periapsis/apoapsis passage) — parking orbits show live countdowns to both. Non-closed
+  trajectories get a warm ballistic prediction arc (two-pass glow), an **IMPACT** marker on
+  the horizon with a live `IMPACT T−` countdown (snapshot of the predicted time-of-impact at
+  the moment of prediction, decremented by the wall-clock elapsed since — never re-predicted),
+  and the SUBORBITAL banner. Vehicles at rest on the pad get PARKED ON THE PAD instead of a
+  bogus countdown.
+- **`DetachedStage` fairings**: jettisoned fairings no longer vanish via tombstone. The staged
+  fairing set is flood-filled (BFS over `Fairing`-category parts from the staged seeds, so a
+  shell + nose cone cluster leaves together while a payload mounted inside stays with the
+  vehicle), split into a gap-tombstoned component with stable original PartIndices (same
+  pattern as `split_at_decouplers`), and tracked as a ballistic free-flyer with **zero**
+  separation impulse. Detached pieces not claimed by a decoupler inherit the vehicle's
+  post-stage velocity, so co-staged fairings drift with zero relative velocity.
+- **RCS + monoprop, pitch-only**: two new templates — `RCS Block` (52,000 N·m of pitch torque at
+  full deflection, 0.9 kg/s feed rate per block) and `Monoprop Tank` (140 kg). Pitch
+  authority = baseline `control_torque` + installed RCS torque, gated on remaining monoprop
+  (recomputed once per 1/240 s fixed tick so RK4 substeps stay pure); drain is proportional to
+  |pitch input| across monoprop tanks in index order — deterministic, fixed-step. Main engines
+  now drain liquid-fuel tanks only (`fuel_type` discriminator), so RCS feedstock is invisible
+  to staged engines — they flame out on mono-prop rather than drink it.
+- **Landing legs are pure mass**: `Landing Leg` is a `Strut`-category part (no flight effect
+  beyond mass/CoM/Izz by construction) with a dedicated procedural sprite.
+- **Verification**: 195/195 unit tests (3,368 checks) green on `debug`, 7/7 ctest cases on
+  `headless` and `ci` (-Werror) presets; VAB/map scenes eye-verified via SwiftShader
+  (`aegis_game_check` with an optional simulated-seconds argument).
+
 ## Design notes (M5)
 
 - **`aegis_offscreen`**: a surface-free Vulkan path for headless frame capture. One private
@@ -415,10 +475,10 @@ This repository's CI environment has **no Vulkan driver and no GPU**. What that 
 - Everything compiles warning-free on `debug`, `ci` (`-Werror`) and `headless` presets.
 - All Vulkan-free logic (allocator, Result, logging, projection, camera, orbital mechanics,
   PNG round trip, parts/staging, flight dynamics & propellant drain, game session FSM …) is
-  unit-tested — 170/170 tests pass (2,871 checks) with the C++ Fortran fallback path active
+  unit-tested — 195/195 tests pass (3,368 checks) with the C++ Fortran fallback path active
   (this container has no gfortran); with Fortran enabled the suite additionally gains the three
   A/B kernel-equivalence groups.
-- `ctest` runs 6 cases: `aegis_tests`, `aegis_roundtrip`, `aegis_rocket_dump`,
+- `ctest` runs 7 cases: `aegis_tests`, `aegis_roundtrip`, `aegis_rocket_dump`,
   `aegis_assembly_check`, `aegis_flight_check` and `aegis_game_check` — the three
   driver-dependent tools **skip cleanly (exit 0)** without a driver; `aegis_assembly_check`
   and `aegis_flight_check` are driver-free and always run. `aegis_game_check` additionally
