@@ -6,6 +6,8 @@
 // programming error (aborts via result_missing_value()).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/assert.hpp>
 #include <aegis/core/types.hpp>
 
@@ -27,9 +29,9 @@ enum class ErrorCode : u32 {
     VulkanFailure,
 };
 
-const char* error_code_name(ErrorCode code) noexcept;
+AEGIS_API const char* error_code_name(ErrorCode code) noexcept;
 
-struct Error {
+struct AEGIS_API Error {
     ErrorCode code = ErrorCode::Unknown;
     i32 native_code = 0;  ///< platform/API-specific code (e.g. VkResult cast); 0 when N/A
     std::string message;
@@ -50,7 +52,7 @@ struct Error {
 };
 
 /// Fatal misuse of a failed Result (payload accessed without a value).
-[[noreturn]] void result_missing_value() noexcept;
+[[noreturn]] AEGIS_API void result_missing_value() noexcept;
 
 // ---------------------------------------------------------------------------
 // Result<T> — either a payload T or an Error. Variant-backed, move-only-ish

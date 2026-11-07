@@ -1,18 +1,20 @@
 // Aegis2D — GLFW surface creation (windowed builds only).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
 #include <aegis/core/result.hpp>
 #include <aegis/vk/instance.hpp>
 
-struct GLFWwindow;  // forward declaration — this header must not require glfw3.h
+struct GLFWwindow;  // opaque C type — no export annotation  // forward declaration — this header must not require glfw3.h
 
 namespace aegis::vk {
 
 /// RAII wrapper owning a VkSurfaceKHR created from a GLFWwindow.
-class GlfwSurface : public core::NonCopyable {
+class AEGIS_API GlfwSurface : public core::NonCopyable {
 public:
     GlfwSurface() = default;
     ~GlfwSurface();

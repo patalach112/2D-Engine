@@ -5,6 +5,8 @@
 // top-left, y down (screen convention).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 namespace aegis::ui {
@@ -31,7 +33,7 @@ enum class UiKey : core::u8 {
     return key == UiKey::None ? core::u64{0} : (core::u64{1} << (static_cast<core::u64>(key) - 1u));
 }
 
-struct UiInput {
+struct AEGIS_API UiInput {
     core::f64 dt = 0.0;            ///< seconds since the previous frame
     core::f32 mouse_x = 0.0f;      ///< pixels, top-left origin, y down
     core::f32 mouse_y = 0.0f;

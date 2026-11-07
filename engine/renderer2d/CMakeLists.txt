@@ -68,14 +68,12 @@ endforeach()
 
 add_custom_target(aegis_renderer2d_shaders ALL DEPENDS "${QUAD_VERT_SPV}" "${QUAD_FRAG_SPV}" "${LINE_VERT_SPV}" "${LINE_FRAG_SPV}" "${PART_VERT_SPV}" "${PART_FRAG_SPV}" "${GLYPH_VERT_SPV}" "${GLYPH_FRAG_SPV}")
 
-add_library(aegis_renderer2d STATIC
+add_library(aegis_renderer2d OBJECT
     src/projection.cpp
     src/camera.cpp
     src/batch_renderer.cpp)
-add_library(aegis::renderer2d ALIAS aegis_renderer2d)
 add_dependencies(aegis_renderer2d aegis_renderer2d_shaders)
 
-target_include_directories(aegis_renderer2d PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(aegis_renderer2d PRIVATE AEGIS_SPV_DIR="${SPV_DIR}")
-target_link_libraries(aegis_renderer2d PUBLIC aegis::vk aegis::memory)
-aegis_set_warnings(aegis_renderer2d)
+
+aegis_engine_module(aegis_renderer2d)

@@ -6,6 +6,8 @@
 // zero external data dependencies until M9 introduces procedural assets.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <array>
@@ -49,23 +51,23 @@ inline constexpr u8 make_rot(const u8 steps, const bool flip) noexcept {
 }
 
 /// One connection node on a part template (unrotated frame, cell units).
-struct NodeDef {
+struct AEGIS_API NodeDef {
     NodeId id = 0;
     NodeType type = NodeType::Bottom;
     f32 x = 0.0f, y = 0.0f;   ///< node position (cell units, may lie on a boundary)
     f32 nx = 0.0f, ny = -1.0f;  ///< outward normal (unit vector, arbitrary direction)
 };
 
-struct EngineSpec { f32 thrust = 0.0f; f32 isp = 0.0f; };  ///< thrust in engine units, isp in s
-struct TankSpec {
+struct AEGIS_API EngineSpec { f32 thrust = 0.0f; f32 isp = 0.0f; };  ///< thrust in engine units, isp in s
+struct AEGIS_API TankSpec {
     f32 propellant = 0.0f;          ///< propellant capacity (mass units)
     u8 fuel_type = 0;               ///< 0 = liquid (main engines), 1 = monoprop (RCS); see vehicle_assembly.hpp
 };
-struct DecouplerSpec { f32 separation_delta_v = 0.0f; };     ///< applied by M8 physics
-struct RcsSpec { f32 torque = 0.0f; f32 drain_kg_per_s = 0.0f; };  ///< pitch torque + monoprop feed rate
+struct AEGIS_API DecouplerSpec { f32 separation_delta_v = 0.0f; };     ///< applied by M8 physics
+struct AEGIS_API RcsSpec { f32 torque = 0.0f; f32 drain_kg_per_s = 0.0f; };  ///< pitch torque + monoprop feed rate
 
 /// Static part definition. Instances are 16-byte PODs (see Part) referencing this.
-struct PartTemplate {
+struct AEGIS_API PartTemplate {
     TemplateId id = kInvalidTemplate;
     const char* name = "";   ///< original designation, e.g. "Aegis MK-I Pod"
     PartCategory category = PartCategory::Strut;
@@ -90,13 +92,13 @@ struct PartTemplate {
 inline constexpr std::size_t kTemplateCount = 16;
 
 /// Built-in template table (order defines ids 0..kTemplateCount-1).
-[[nodiscard]] const std::array<PartTemplate, kTemplateCount>& templates() noexcept;
+[[nodiscard]] AEGIS_API const std::array<PartTemplate, kTemplateCount>& templates() noexcept;
 
 /// Registry lookup; nullptr when id is out of range.
-[[nodiscard]] const PartTemplate* find_template(TemplateId id) noexcept;
+[[nodiscard]] AEGIS_API const PartTemplate* find_template(TemplateId id) noexcept;
 
 /// Registry lookup by stable serialization `key`; nullptr when no template
 /// claims it. Used by save/load — never by rendering or physics.
-[[nodiscard]] const PartTemplate* find_template_by_key(std::string_view key) noexcept;
+[[nodiscard]] AEGIS_API const PartTemplate* find_template_by_key(std::string_view key) noexcept;
 
 }  // namespace aegis::parts

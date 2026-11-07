@@ -1,6 +1,8 @@
 // Aegis2D — logical device management.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -12,7 +14,7 @@
 
 namespace aegis::vk {
 
-struct DeviceConfig {
+struct AEGIS_API DeviceConfig {
     /// Optional surface (VK_NULL_HANDLE for headless/offscreen usage).
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     /// Add VK_KHR_swapchain to the device extensions (required for present).
@@ -24,7 +26,7 @@ struct DeviceConfig {
 
 /// RAII logical device. Holds the graphics queue, the optional present queue
 /// and the optional dedicated transfer queue. Move-only.
-class Device : public core::NonCopyable {
+class AEGIS_API Device : public core::NonCopyable {
 public:
     Device() = default;
     ~Device();

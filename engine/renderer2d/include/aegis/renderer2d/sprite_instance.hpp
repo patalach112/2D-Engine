@@ -1,5 +1,7 @@
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 namespace aegis::renderer2d {
@@ -11,7 +13,7 @@ namespace aegis::renderer2d {
 ///   location 1 = vec4 a_tint   (offset 16)  — rgba tint, channels in [0, 1]
 ///   location 2 = vec2 a_params (offset 32)  — x = rotation (radians, CCW),
 ///                                             y = softness [0 = hard edge .. 1 = fully soft radial fade]
-struct SpriteInstance {
+struct AEGIS_API SpriteInstance {
     core::f32 x = 0.0f;
     core::f32 y = 0.0f;
     core::f32 width = 1.0f;

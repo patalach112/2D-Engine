@@ -13,13 +13,15 @@
 // straight into BatchRenderer::begin_frame().
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <array>
 
 namespace aegis::renderer2d {
 
-struct Camera2DConfig {
+struct AEGIS_API Camera2DConfig {
     core::f32 viewport_width = 1280.0f;   ///< pixels
     core::f32 viewport_height = 720.0f;   ///< pixels
     core::f32 initial_zoom = 1.0f;        ///< pixels per world unit
@@ -27,7 +29,7 @@ struct Camera2DConfig {
     core::f32 max_zoom = 256.0f;          ///< pixels per world unit
 };
 
-class Camera2D {
+class AEGIS_API Camera2D {
 public:
     explicit Camera2D(const Camera2DConfig& config = {});
 

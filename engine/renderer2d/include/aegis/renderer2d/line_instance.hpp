@@ -1,5 +1,7 @@
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <cstddef>
@@ -22,7 +24,7 @@ namespace aegis::renderer2d {
 ///                                             (multiply by Camera2D::world_per_pixel()
 ///                                              for constant screen-space width),
 ///                                             y = softness [0 = hard edge .. 1 = soft band]
-struct LineInstance {
+struct AEGIS_API LineInstance {
     core::f32 ax = 0.0f;
     core::f32 ay = 0.0f;
     core::f32 bx = 1.0f;

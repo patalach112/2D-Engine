@@ -1,13 +1,8 @@
 # aegis_orbit — Keplerian orbital mechanics (Vulkan-free, Milestone 4)
-
-add_library(aegis_orbit STATIC
+add_library(aegis_orbit OBJECT
     src/orbit.cpp
     src/orbit_fallback.cpp
     src/ballistic.cpp)
-add_library(aegis::orbit ALIAS aegis_orbit)
-
-target_include_directories(aegis_orbit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(aegis_orbit PUBLIC aegis::core)
 
 # Fortran kernels (Milestone 6): enabled by the top-level CheckLanguage probe
 # (AEGIS_FORTRAN_FOUND). .mod files stay inside the build tree; strict IEEE
@@ -27,4 +22,4 @@ else()
     message(STATUS "Aegis2D: aegis_orbit — C++ fallback kernels")
 endif()
 
-aegis_set_warnings(aegis_orbit)
+aegis_engine_module(aegis_orbit)

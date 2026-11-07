@@ -4,6 +4,8 @@
 // manager and is unit-tested without a driver.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/result.hpp>
 #include <aegis/core/types.hpp>
 
@@ -11,7 +13,7 @@
 
 namespace aegis::memory {
 
-struct Allocation {
+struct AEGIS_API Allocation {
     core::u64 offset = 0;
     core::u64 size = 0;
 };
@@ -26,7 +28,7 @@ struct Allocation {
 ///
 /// Not thread-safe; callers serialize access (the engine owns allocation at
 /// load time).
-class FreeListAllocator {
+class AEGIS_API FreeListAllocator {
 public:
     explicit FreeListAllocator(core::u64 capacity);
 

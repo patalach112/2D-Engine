@@ -65,6 +65,7 @@ else()
 endif()
 
 include(FetchContent)
+include(cmake/AegisEngine.cmake)   # PIC, AEGIS_ENGINE_INCLUDE_DIRS, aegis_engine_module() — before deps so 3rd-party picks up PIC
 include(cmake/AegisDeps.cmake)
 include(cmake/AegisWarnings.cmake)
 
@@ -87,6 +88,32 @@ add_subdirectory(engine/ui)          # aegis_ui         — immediate-mode UI ke
 add_subdirectory(engine/render)       # aegis_render     — parts/planet/UI bridges to renderer2d (Milestone 9)
 add_subdirectory(engine/renderer2d)  # aegis_renderer2d — instanced 2D batch renderer (Milestone 3+4)
 add_subdirectory(engine/offscreen)   # aegis_offscreen  — offscreen rendering + PNG writer (Milestone 5)
+
+# --- aegis_engine: every engine module in ONE shared library -----------------
+# .so on Linux / .dll on Windows. All public boundary symbols are annotated
+# with AEGIS_API (see engine/core/include/aegis/export.h); unannotated
+# symbols stay hidden on Linux and are simply not exported anywhere else.
+add_library(aegis_engine SHARED)
+target_link_libraries(aegis_engine
+    PRIVATE aegis_core aegis_memory aegis_vk aegis_orbit aegis_parts aegis_serial
+            aegis_physics aegis_ui aegis_render aegis_renderer2d aegis_offscreen
+    PUBLIC  aegis::volk)   # volk.h appears in public headers (buffered Vulkan calls)
+if(AEGIS_WINDOWED)
+    target_link_libraries(aegis_engine PRIVATE aegis::glfw)
+endif()
+target_link_libraries(aegis_engine PRIVATE aegis::miniz)   # PNG deflate — headers stay private
+# Unix: keep the static 3rd-party archives (volk/glfw/miniz) out of the
+# dynamic symbol table entirely — only AEGIS_API symbols cross the boundary.
+if(UNIX AND NOT APPLE)
+    target_link_options(aegis_engine PRIVATE -Wl,--exclude-libs,ALL)
+endif()
+target_include_directories(aegis_engine PUBLIC ${AEGIS_ENGINE_INCLUDE_DIRS})
+add_library(aegis::engine ALIAS aegis_engine)
+# Compatibility aliases — existing module link names now resolve to the one
+# shared library, so consumers needed zero changes.
+foreach(_module core memory vk orbit parts serial physics ui render renderer2d offscreen)
+    add_library(aegis::${_module} ALIAS aegis_engine)
+endforeach()
 
 # aegis_game (session + scenes) is always built: the tools and test
 # suite link it for headless verification, not just the windowed app.
@@ -111,6 +138,21 @@ if(AEGIS_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
+# --- Post-build: drop the shared engine next to every executable -------------
+# A fresh pull that rebuilds aegis_engine leaves stale binaries unusable, so
+# sync the library into each consumer's output directory on every build.
+set(_aegis_engine_consumers
+    aegis_game aegis_demo aegis_roundtrip aegis_batch_demo aegis_orbit_demo
+    aegis_rocket_dump aegis_assembly_check aegis_flight_check aegis_game_check aegis_craft_check
+    aegis_tests)
+foreach(_consumer IN LISTS _aegis_engine_consumers)
+    if(TARGET ${_consumer})
+        add_custom_command(TARGET aegis_engine POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aegis_engine> $<TARGET_FILE_DIR:${_consumer}>
+            COMMENT "aegis_engine -> ${_consumer} output dir")
+    endif()
+endforeach()
+
 message(STATUS "------------------------------------------------------------------")
 message(STATUS "Aegis2D ${PROJECT_VERSION} configured")
 message(STATUS "  C++ standard : C++20")
@@ -121,4 +163,19 @@ if(AEGIS_WINDOWED)
     message(STATUS "  GLFW         : X11=${GLFW_BUILD_X11} Wayland=${GLFW_BUILD_WAYLAND} NullPlatform=${AEGIS_GLFW_NULL_PLATFORM}")
 endif()
 message(STATUS "  Tests        : ${AEGIS_BUILD_TESTS}")
+# --- Post-build: drop the shared engine next to every executable -------------
+# A fresh pull that rebuilds aegis_engine leaves stale binaries unusable, so
+# sync the library into each consumer's output directory on every build.
+set(_aegis_engine_consumers
+    aegis_game aegis_demo aegis_roundtrip aegis_batch_demo aegis_orbit_demo
+    aegis_rocket_dump aegis_assembly_check aegis_flight_check aegis_game_check aegis_craft_check
+    aegis_tests)
+foreach(_consumer IN LISTS _aegis_engine_consumers)
+    if(TARGET ${_consumer})
+        add_custom_command(TARGET aegis_engine POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aegis_engine> $<TARGET_FILE_DIR:${_consumer}>
+            COMMENT "aegis_engine -> ${_consumer} output dir")
+    endif()
+endforeach()
+
 message(STATUS "------------------------------------------------------------------")

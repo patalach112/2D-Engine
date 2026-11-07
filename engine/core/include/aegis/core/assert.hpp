@@ -1,5 +1,7 @@
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <cstdlib>
@@ -9,7 +11,7 @@ namespace aegis {
 
 /// Prints a plain, unannotated diagnostic line to stderr. Used by the assert
 /// and result machinery before anything else is guaranteed to be usable.
-void aegis_stderr(const std::string& message) noexcept;
+AEGIS_API void aegis_stderr(const std::string& message) noexcept;
 
 namespace core {
 
@@ -17,7 +19,7 @@ namespace core {
 /// aborts. Always enabled (the engine does not compile asserts out); checked
 /// on every build configuration so misuse fails fast in development and in
 /// release equally.
-void assertion_failed(const char* expression, const char* file, int line, const char* message) noexcept;
+AEGIS_API void assertion_failed(const char* expression, const char* file, int line, const char* message) noexcept;
 
 } // namespace core
 } // namespace aegis

@@ -1,6 +1,8 @@
 // Aegis2D — physical device selection.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/result.hpp>
@@ -12,13 +14,13 @@ namespace aegis::vk {
 
 inline constexpr core::u32 kInvalidQueueFamily = ~core::u32{0};
 
-struct QueueFamilySelection {
+struct AEGIS_API QueueFamilySelection {
     core::u32 graphics = kInvalidQueueFamily;
     core::u32 present = kInvalidQueueFamily;            ///< == graphics for headless usage or unified families
     core::u32 dedicated_transfer = kInvalidQueueFamily; ///< TRANSFER-only family, if the GPU exposes one
 };
 
-struct PhysicalDeviceInfo {
+struct AEGIS_API PhysicalDeviceInfo {
     VkPhysicalDevice handle = VK_NULL_HANDLE;
     VkPhysicalDeviceProperties properties{};
     VkPhysicalDeviceFeatures features{};
@@ -43,7 +45,7 @@ struct PhysicalDeviceInfo {
 ///
 /// Pass VK_NULL_HANDLE as `surface` for headless (offscreen) usage; present
 /// support is then not required.
-[[nodiscard]] core::Result<PhysicalDeviceInfo> select_physical_device(
+[[nodiscard]] AEGIS_API core::Result<PhysicalDeviceInfo> select_physical_device(
     VkInstance instance, VkSurfaceKHR surface);
 
 } // namespace aegis::vk

@@ -1,6 +1,8 @@
 // Aegis2D — swapchain management (+ recreation on resize / suboptimal).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -13,7 +15,7 @@
 
 namespace aegis::vk {
 
-struct SwapchainConfig {
+struct AEGIS_API SwapchainConfig {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     core::u32 width = 1280;
     core::u32 height = 720;
@@ -22,7 +24,7 @@ struct SwapchainConfig {
     bool prefer_mailbox = true;
 };
 
-class Swapchain : public core::NonCopyable {
+class AEGIS_API Swapchain : public core::NonCopyable {
 public:
     Swapchain() = default;
     ~Swapchain();

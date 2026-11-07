@@ -8,6 +8,8 @@
 // tombstoned gaps), so assignments stay valid across activations.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/result.hpp>
 #include <aegis/core/types.hpp>
 #include <aegis/parts/vehicle_assembly.hpp>
@@ -21,19 +23,19 @@ using core::u8;
 
 enum class StageAction : u8 { IgniteEngine, FireDecoupler, JettisonFairing };
 
-struct StageActionItem {
+struct AEGIS_API StageActionItem {
     PartIndex part = kInvalidPart;
     StageAction action = StageAction::IgniteEngine;
 };
 
-struct Stage {
+struct AEGIS_API Stage {
     std::vector<StageActionItem> items{};
 };
 
 inline constexpr u8 kUnstaged = 0xFF;
 inline constexpr u8 kMaxStages = 16;
 
-struct StageFireResult {
+struct AEGIS_API StageFireResult {
     /// Actions that fired, in firing order (decouplers → fairings → engines).
     std::vector<StageActionItem> fired{};
 
@@ -43,7 +45,7 @@ struct StageFireResult {
     std::vector<VehicleAssembly> detached{};
 };
 
-class StagingList {
+class AEGIS_API StagingList {
 public:
     // --- Assignment ---------------------------------------------------------
 

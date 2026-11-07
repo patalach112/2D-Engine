@@ -1,5 +1,7 @@
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -28,9 +30,9 @@ namespace aegis::renderer2d {
 /// and uses its own 56-byte instance ring.
 enum class PrimitiveKind : core::u32 { Sprite = 0, Particle = 1, UI = 2, Line = 3, Glyph = 4, Part = 5 };
 
-[[nodiscard]] const char* primitive_kind_name(PrimitiveKind kind) noexcept;
+[[nodiscard]] AEGIS_API const char* primitive_kind_name(PrimitiveKind kind) noexcept;
 
-struct BatchStats {
+struct AEGIS_API BatchStats {
     /// Flushed in the most recent flush() call (per rendered frame when called once per frame).
     core::u32 draw_calls = 0;
     core::u64 instance_count = 0;
@@ -45,7 +47,7 @@ struct BatchStats {
     core::u64 lifetime_instances = 0;
 };
 
-struct BatchRendererConfig {
+struct AEGIS_API BatchRendererConfig {
     /// Hard cap on instanced quads per frame and per instance class
     /// (the 40-byte class: Sprite/Particle/UI/Line/Glyph — and the 56-byte
     /// Part class gets its own ring of the same size).
@@ -78,7 +80,7 @@ struct BatchRendererConfig {
 ///
 /// Threading: all methods must be called from the thread that owns the
 /// command buffer recording (typically the render thread).
-class BatchRenderer : public core::NonCopyable {
+class AEGIS_API BatchRenderer : public core::NonCopyable {
 public:
     BatchRenderer() = default;
     ~BatchRenderer();

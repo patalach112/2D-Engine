@@ -1,6 +1,8 @@
 // Aegis2D — Vulkan instance management (loader bootstrap via volk).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -12,7 +14,7 @@
 
 namespace aegis::vk {
 
-struct InstanceConfig {
+struct AEGIS_API InstanceConfig {
     std::string application_name = "Aegis2D";
     std::string engine_name = "Aegis2D";
     /// Enable VK_LAYER_KHRONOS_validation when it is installed. Missing layer
@@ -23,7 +25,7 @@ struct InstanceConfig {
     std::vector<const char*> required_extensions;
 };
 
-class Instance : public core::NonCopyable {
+class AEGIS_API Instance : public core::NonCopyable {
 public:
     Instance() = default;
     ~Instance();

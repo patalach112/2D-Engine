@@ -1,5 +1,7 @@
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <algorithm>
@@ -40,7 +42,7 @@ constexpr void unpack_uv16(const core::u32 packed, core::f32& u, core::f32& v) n
     v = static_cast<core::f32>(packed >> kGlyphUvBits) / 65535.0f;
 }
 
-struct GlyphInstance {
+struct AEGIS_API GlyphInstance {
     core::f32 x = 0.0f;
     core::f32 y = 0.0f;
     core::f32 width = 1.0f;

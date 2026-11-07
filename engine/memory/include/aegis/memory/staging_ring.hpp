@@ -1,6 +1,8 @@
 // Aegis2D — persistently mapped ring buffer for staging uploads.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -16,7 +18,7 @@ namespace aegis::memory {
 /// into the persistently mapped buffer and stays valid until the next
 /// reset() call (the bytes are readable by the host immediately; the GPU may
 /// read them once submitted).
-struct StagingSlice {
+struct AEGIS_API StagingSlice {
     core::u64 offset = 0;  ///< offset of the slice within the ring
     core::u64 size = 0;    ///< bytes available at the slice start
     const void* data = nullptr;
@@ -26,7 +28,7 @@ struct StagingSlice {
 /// wrap-around. reset() marks the whole ring reusable; callers must only call
 /// it once the GPU has consumed everything uploaded so far (the transfer API is
 /// blocking, which makes the ordering trivial right now).
-class StagingRing : public core::NonCopyable {
+class AEGIS_API StagingRing : public core::NonCopyable {
 public:
     StagingRing() = default;
     ~StagingRing();
