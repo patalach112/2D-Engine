@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -184,8 +186,17 @@ core::Result<PhysicalDeviceInfo> select_physical_device(const VkInstance instanc
                 std::string(needs_present ? " + present support + VK_KHR_swapchain)" : ")"));
     }
 
+    // Vendor/driver versions are the first thing a bug report about surface or
+    // swapchain failures needs (e.g. NVIDIA's packed driverVersion on Windows).
+    std::ostringstream driver_hex;
+    driver_hex << "vendorID=0x" << std::hex << std::setw(4) << std::setfill('0')
+               << best.properties.vendorID << " driverVersion=0x" << best.properties.driverVersion
+               << " (api " << std::dec << VK_API_VERSION_MAJOR(best.properties.driverVersion) << "."
+               << VK_API_VERSION_MINOR(best.properties.driverVersion) << "."
+               << VK_API_VERSION_PATCH(best.properties.driverVersion) << ")";
     AEGIS_LOG_INFO("[aegis] selected GPU '" << best.properties.deviceName
-                   << "' (score=" << best.score << ", graphics queue family "
+                   << "' (" << driver_hex.str()
+                   << ", score=" << best.score << ", graphics queue family "
                    << best.queues.graphics << ", present family " << best.queues.present
                    << ", dedicated transfer family "
                    << (best.queues.dedicated_transfer != kInvalidQueueFamily

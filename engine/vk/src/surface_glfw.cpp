@@ -41,6 +41,13 @@ core::Result<GlfwSurface> GlfwSurface::create(const Instance& instance, GLFWwind
     if (const VkResult result = glfwCreateWindowSurface(instance.handle(), window, nullptr, &raw);
         result != VK_SUCCESS) {
         std::string message = std::string("glfwCreateWindowSurface failed: ") + vk_result_to_string(result);
+        // Pull the GLFW-side error too — on Win32 it often carries the loader's
+        // own HINSTANCE/hwnd detail (e.g. GLFW_API_UNAVAILABLE vs a driver error).
+        const char* glfw_description = nullptr;
+        if (const int glfw_error = glfwGetError(&glfw_description);
+            glfw_error != GLFW_NO_ERROR && glfw_description != nullptr) {
+            message += " (glfw error " + std::to_string(glfw_error) + ": " + glfw_description + ")";
+        }
         if (result == VK_ERROR_EXTENSION_NOT_PRESENT) {
             // Almost always means the instance was created without the platform
             // surface extensions (VK_KHR_surface / VK_KHR_win32_surface) — e.g.

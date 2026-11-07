@@ -10,6 +10,11 @@
 // Windowed only — never registered with ctest. In driverless/headless
 // environments (glfw Null platform) the app boots, auto-launches the demo
 // rocket after 30 frames and exits 0 with a smoke message.
+#if defined(_WIN32)
+#   define WIN32_LEAN_AND_MEAN
+#   define NOMINMAX
+#   include <windows.h>  // SetProcessDPIAware (older GLFW path)
+#endif
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -44,7 +49,10 @@
 #include "game_session.hpp"
 #include "scene.hpp"
 
+#include <cstdlib>
 #include <memory>
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -159,6 +167,19 @@ int run_windowed() {
         glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_NULL);
     }
 
+#if defined(_WIN32)
+    // Win32 DPI awareness must be declared BEFORE the first window / Vulkan call
+    // or the swapchain, mouse coordinates and UI hit-testing disagree on scaled
+    // displays (blurry output, offset UI). SetProcessDPIAware (user32, Vista+) is
+    // the universally supported path; if a future GLFW exposes a native
+    // DPI-awareness init hint the #if picks that up automatically.
+#if defined(GLFW_WIN32_DPI_AWARENESS) && defined(GLFW_DPI_AWARENESS_SYSTEM)
+    glfwInitHint(GLFW_WIN32_DPI_AWARENESS, GLFW_DPI_AWARENESS_SYSTEM);
+#else
+    SetProcessDPIAware();
+#endif
+#endif
+
     if (glfwInit() != GLFW_TRUE) {
         AEGIS_LOG_ERROR("[aegis] glfwInit failed");
         return 1;
@@ -196,10 +217,7 @@ int run_windowed() {
     }
     aegis::game::scene_set_viewport(scene, static_cast<float>(fb_width), static_cast<float>(fb_height));
 
-    // --- Vulkan instance --------------------------------------------------------
-    aegis::vk::InstanceConfig instance_config;
-    instance_config.application_name = "Aegis2D Game";
-    instance_config.enable_validation = true;
+    // --- Vulkan instance + window surface --------------------------------------
     // GLFW must be initialised before this call. Empty result means the
     // windowing build has no Vulkan-surface-capable platform (the glfw Null
     // platform), so VK_KHR_surface can never be enabled — fail loudly here
@@ -211,25 +229,62 @@ int run_windowed() {
                         "extensions — rebuild with the Win32/X11/Wayland platform enabled");
         return exit_from_failure("required instance extensions");
     }
+    std::vector<const char*> glfw_extension_list;
+    glfw_extension_list.reserve(glfw_extension_count);
     AEGIS_LOG_INFO("[aegis] glfw requires " << glfw_extension_count << " instance extension(s)");
     for (u32 i = 0; i < glfw_extension_count; ++i) {
         AEGIS_LOG_INFO("[aegis] glfw instance extension: " << glfw_extensions[i]);
-        instance_config.required_extensions.push_back(glfw_extensions[i]);
+        glfw_extension_list.push_back(glfw_extensions[i]);
     }
 
-    auto instance_result = aegis::vk::Instance::create(instance_config);
-    if (!instance_result.has_value()) {
-        AEGIS_LOG_ERROR("[aegis] " << instance_result.error().to_string());
-        return exit_from_failure("instance");
+    // Validation layers are a developer diagnostic, not a runtime requirement.
+    // Opt in with AEGIS_VK_VALIDATION=1; off by default because a layer/SDK
+    // version mismatch on older GPUs (e.g. GTX 970) can turn vkCreateWin32SurfaceKHR
+    // into VK_ERROR_INITIALIZATION_FAILED on otherwise healthy drivers.
+    bool validation_requested = false;
+    if (const char* const env = std::getenv("AEGIS_VK_VALIDATION")) {
+        const std::string value(env);
+        validation_requested = value == "1" || value == "true" || value == "TRUE" || value == "yes" ||
+                               value == "YES" || value == "on" || value == "ON";
     }
-    aegis::vk::Instance instance = std::move(instance_result).take();
+    if (!validation_requested) {
+        AEGIS_LOG_INFO("[aegis] validation layers off (set AEGIS_VK_VALIDATION=1 to enable)");
+    }
 
-    auto surface_result = aegis::vk::GlfwSurface::create(instance, window.get());
-    if (!surface_result.has_value()) {
-        AEGIS_LOG_ERROR("[aegis] " << surface_result.error().to_string());
-        return exit_from_failure("surface");
+    const auto bring_up = [&](const bool with_validation)
+        -> std::optional<std::pair<aegis::vk::Instance, aegis::vk::GlfwSurface>> {
+        aegis::vk::InstanceConfig instance_config;
+        instance_config.application_name = "Aegis2D Game";
+        instance_config.enable_validation = with_validation;
+        instance_config.required_extensions = glfw_extension_list;
+        auto instance_result = aegis::vk::Instance::create(instance_config);
+        if (!instance_result.has_value()) {
+            AEGIS_LOG_ERROR("[aegis] " << instance_result.error().to_string());
+            return std::nullopt;
+        }
+        aegis::vk::Instance instance = std::move(instance_result).take();
+        auto surface_result = aegis::vk::GlfwSurface::create(instance, window.get());
+        if (!surface_result.has_value()) {
+            AEGIS_LOG_ERROR("[aegis] " << surface_result.error().to_string());
+            return std::nullopt;  // RAII: dead instance unwinds before returning
+        }
+        return std::make_pair(std::move(instance), std::move(surface_result).take());
+    };
+
+    auto bringup = bring_up(validation_requested);
+    if (!bringup && validation_requested) {
+        AEGIS_LOG_WARN("[aegis] bring-up failed with validation layers enabled — retrying once "
+                       "without them (layer/driver mismatch is a known source of "
+                       "VK_ERROR_INITIALIZATION_FAILED from vkCreateWin32SurfaceKHR)");
+        bringup = bring_up(false);
     }
-    aegis::vk::GlfwSurface surface = std::move(surface_result).take();
+    if (!bringup) {
+        AEGIS_LOG_ERROR("[aegis] Vulkan window bring-up failed — check the graphics driver "
+                        "(GTX 970 needs NVIDIA 472.12+ / Vulkan 1.3) and relaunch");
+        return exit_from_failure("instance/surface");
+    }
+    aegis::vk::Instance instance = std::move(bringup->first);
+    aegis::vk::GlfwSurface surface = std::move(bringup->second);
 
     auto gpu_result = aegis::vk::select_physical_device(instance.handle(), surface.handle());
     if (!gpu_result.has_value()) {

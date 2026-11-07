@@ -61,13 +61,17 @@ core::Result<Instance> Instance::create(const InstanceConfig& config) {
                                                static_cast<core::i32>(init));
     }
 
-    u32 api_version = VK_API_VERSION_1_0;
-    if (vkEnumerateInstanceVersion(&api_version) != VK_SUCCESS ||
-        VK_API_VERSION_MINOR(api_version) < 3) {
+    // volkGetInstanceVersion() is NULL-safe (an ancient loader < 1.1 leaves the
+    // vkEnumerateInstanceVersion PFN null; calling it would be a jump-through-
+    // null). Returns the loader's advertised API version, or 0 when unusable.
+    const u32 api_version = volkGetInstanceVersion();
+    const u32 api_major = VK_API_VERSION_MAJOR(api_version);
+    const u32 api_minor = VK_API_VERSION_MINOR(api_version);
+    if (api_version == 0 || api_major < 1 || (api_major == 1 && api_minor < 3)) {
         return core::Result<Instance>::failure(
             core::ErrorCode::Unavailable,
-            "Vulkan 1.3+ loader required (found API " + std::to_string(VK_API_VERSION_MAJOR(api_version)) +
-                "." + std::to_string(VK_API_VERSION_MINOR(api_version)) + ")");
+            "Vulkan 1.3+ loader required (found API " + std::to_string(api_major) + "." +
+                std::to_string(api_minor) + ")");
     }
 
     // Window-surface extensions returned by GLFW (VK_KHR_surface plus the

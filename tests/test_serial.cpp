@@ -10,6 +10,7 @@
 #include <aegis/serial/craft_store.hpp>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -310,6 +311,56 @@ AEGIS_TEST(serial_craft, "rejects unknown template unknown stage and bad part re
     const char* bad_kind =
         R"({"kind": "aegis-other", "version": 1, "parts": []})";
     AEGIS_CHECK(!craft_from_json(bad_kind).has_value());
+}
+
+AEGIS_TEST(serial_craft, "malformed inputs never crash and always return a result") {
+    // Deterministic pseudo-fuzz net: every preset's serialized craft, then
+    // (a) prefix truncations, (b) xorshift-driven byte corruptions, (c) random
+    // garbage. craft_from_json must always return a Result — never crash,
+    // never hang, never loop (ASan/UBSan builds exercise this hardest).
+    std::uint64_t seed = 0x9E3779B97F4A7C15ull;
+    const auto next = [&seed]() {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        return seed;
+    };
+    for (aegis::core::u32 preset = 0; preset < aegis::game::kPresetCount; ++preset) {
+        aegis::parts::VehicleAssembly assembly = aegis::game::make_preset_rocket(preset);
+        aegis::parts::StagingList staging;
+        (void)staging.auto_assign(assembly);
+        CraftMeta meta;
+        meta.name = "fuzz";
+        meta.engine = "test";
+        meta.milestone = 1;
+        const std::string doc = craft_to_json(assembly, staging, meta);
+
+        const std::size_t step = (doc.size() > 256) ? (doc.size() / 256 + 1) : 1;
+        for (std::size_t len = 0; len < doc.size(); len += step) {  // (a)
+            const aegis::core::Result<Craft> result = craft_from_json(doc.substr(0, len));
+            (void)result;
+        }
+        for (std::size_t i = 0; i < 1200; ++i) {  // (b)
+            std::string mutated = doc;
+            const std::size_t flips = 1 + (next() % 4);
+            for (std::size_t f = 0; f < flips && !mutated.empty(); ++f) {
+                mutated[static_cast<std::size_t>(next() % mutated.size())] =
+                    static_cast<char>(next() & 0x7F);
+            }
+            const aegis::core::Result<Craft> result = craft_from_json(mutated);
+            (void)result;
+        }
+        for (std::size_t i = 0; i < 200; ++i) {  // (c)
+            std::string garbage;
+            garbage.reserve(96);
+            for (std::size_t j = 0, n = next() % 96; j < n; ++j) {
+                garbage.push_back(static_cast<char>(next() & 0x7F));
+            }
+            const aegis::core::Result<Craft> result = craft_from_json(garbage);
+            (void)result;
+        }
+    }
+    AEGIS_CHECK(true);
 }
 
 AEGIS_TEST(serial_craft, "propellant is clamped to tank capacity") {
