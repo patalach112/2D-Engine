@@ -1,0 +1,18 @@
+# Aegis2D build artifacts
+/build/
+/out/
+/.cache/
+compile_commands.json
+
+# IDE
+.vscode/
+.idea/
+.clangd/
+*.swp
+
+# Generated shaders (Milestone 3+)
+*.spv
+
+# Logs / dumps
+*.log
+frame.png
