@@ -107,6 +107,12 @@ public:
     /// (subtree cut). Returns the number of parts removed (tombstoned).
     [[nodiscard]] core::Result<u32> remove(PartIndex index);
 
+    /// Drain propellant from a fuel tank (mass units). Returns the amount
+    /// actually drained (clamped to the remaining load) and marks the mass
+    /// properties dirty so CoM/Izz re-aggregate on next query. Rejects dead
+    /// parts, non-tank templates and negative/NaN drains.
+    [[nodiscard]] core::Result<f32> consume_propellant(PartIndex tank, f32 kg) noexcept;
+
     // --- Queries ------------------------------------------------------------
 
     [[nodiscard]] const std::vector<Part>& parts() const noexcept { return parts_; }

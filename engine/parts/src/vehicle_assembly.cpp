@@ -553,6 +553,28 @@ core::Result<u32> VehicleAssembly::jettison_fairings(const std::vector<u32>& par
     return core::Result<u32>::ok(dropped);
 }
 
+core::Result<f32> VehicleAssembly::consume_propellant(const PartIndex tank,
+                                                       const f32 kg) noexcept {
+    const Part* existing = part(tank);
+    if (!existing) {
+        return core::Result<f32>::failure(ErrorCode::InvalidArgument, "consume_propellant: unknown or dead tank");
+    }
+    if (!(kg >= 0.0f)) {
+        return core::Result<f32>::failure(ErrorCode::InvalidArgument,
+                                          "consume_propellant: drain must be non-negative");
+    }
+    const PartTemplate* tmpl = find_template(existing->tmpl);
+    if (!tmpl || tmpl->category != PartCategory::FuelTank) {
+        return core::Result<f32>::failure(ErrorCode::InvalidArgument,
+                                          "consume_propellant: part is not a fuel tank");
+    }
+    Part& p = parts_[tank];
+    const f32 drained = std::min(kg, p.propellant);
+    p.propellant -= drained;
+    mass_dirty_ = true;
+    return core::Result<f32>::ok(drained);
+}
+
 std::vector<VehicleAssembly> VehicleAssembly::split_at_decouplers(
     const std::vector<u32>& decoupler_parts) const {
     // NOTE: declared to return assemblies; invalid indices panic-free filter.

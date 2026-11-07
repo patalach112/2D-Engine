@@ -42,6 +42,14 @@ struct State {
 }
 [[nodiscard]] core::f64 mean_motion(const Elements& elements) noexcept;     ///< n = sqrt(mu/a^3)
 
+/// Derive Keplerian elements from a state vector at absolute time `t`.
+/// `periapsis_angle` is set to 0 for circular orbits (periapsis is undefined).
+/// Unbound trajectories (energy >= 0) produce eccentricity >= 1 with a negative
+/// semi-major axis; `state_at()` must NOT be called on those (precondition e < 1).
+[[nodiscard]] Elements elements_from_state(std::array<core::f64, 2> position,
+                                          std::array<core::f64, 2> velocity,
+                                          core::f64 gravitational_parameter, core::f64 t) noexcept;
+
 /// Kepler's equation solver. M is normalized to [0, 2*pi).
 /// Precondition: 0 <= eccentricity < 1.
 [[nodiscard]] core::f64 solve_kepler(core::f64 mean_anomaly, core::f64 eccentricity) noexcept;

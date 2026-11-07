@@ -4,12 +4,14 @@ Lightweight, ultra-high-performance 2D game engine for **space flight simulation
 C++20, Vulkan 1.3, clean console-style architecture (low-level core + modular renderer,
 batch rendering, offscreen PNG verification).
 
-> **Status: Milestone 7 — Part System & Vehicle Assembly** ✅ (builds clean, unit tests green)
+> **Status: Milestone 8 — Physics Integration & Flight Dynamics** ✅ (builds clean, unit tests green)
 >
 > Phase-1 core exists (M1–M6 compile-verified; windowed Vulkan runs need a Vulkan 1.3 driver).
-> Milestone 7 adds the SFS-style part system: grid-based assembly with node snapping, staging
-> with sequential activation and decoupler splits, and aggregate mass/CoM/Izz — all headless,
-> data-oriented and unit-tested. The Vulkan runtime paths are driver-verified on your machine —
+> Milestone 7 adds the SFS-style part system (grid assembly, staging, splits, mass/CoM/Izz).
+> Milestone 8 adds deterministic rigid-body flight dynamics on top of it: propellant drain with
+> flameouts, momentum-conserving stage separation, ballistic detached stages, quadratic drag,
+> an exponential atmosphere, soft contact with impact detection — headless, f64 RK4 at 1/240 s,
+> unit-tested and ctest-registered. The Vulkan runtime paths are driver-verified on your machine —
 > see "Verification" below.
 
 ## Requirements
@@ -56,6 +58,9 @@ ctest --preset=debug
 
 # Milestone 7: build the three-stage booster rocket, stage it end to end, verify everything
 ./build/debug/tools/aegis_assembly_check/aegis_assembly_check            # "ROCKET/ASSEMBLY_VERIFIED"
+
+# Milestone 8: fly that rocket — liftoff, stage separations, 21.9 km apogee, propellant budget
+./build/debug/tools/aegis_flight_check/aegis_flight_check                # "FLIGHT/ASCENT_VERIFIED"
 ```
 
 `aegis_orbit_demo` controls: **scroll** = cursor-anchored zoom · **WASD/arrows** = pan ·
@@ -84,7 +89,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 | 4 | Camera & Orbital Trajectory System (2D zoom camera, orbit/velocity lines) | ✅ done |
 | 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | ✅ done |
 | 6 | Fortran Math Bridge & Kepler Solver (Fortran kernels behind a C ABI; C++ fallback) | ✅ done |
-| 7 | Part System & Vehicle Assembly (grid snap, staging, mass CoM) | ✅ done (this milestone) |
+| 7 | Part System & Vehicle Assembly (grid snap, staging, mass CoM) | ✅ done |
+| 8 | Physics Integration & Flight Dynamics (RK4, propellant drain, separation Δv, ballistic stages, contact) | ✅ done (this milestone) |
 
 ## Repository layout
 
@@ -94,6 +100,9 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 │   ├── core/              # aegis_core       — fixed-width types, Result<T>, logging, asserts (no Vulkan)
 │   ├── parts/             # aegis_parts      — part templates registry, grid-based vehicle assembly,
 │   │                      #                staging, decoupler splits, mass/CoM/Izz (Vulkan-free; M7)
+│   ├── physics/           # aegis_physics    — rigid-body flight dynamics: fixed-step RK4, propellant
+│   │                      #                drain + flameout, separation impulses (momentum-exact), ballistic
+│   │                      #                detached stages, drag/atmosphere, contact, events (M8)
 │   ├── orbit/             # aegis_orbit      — Keplerian orbital mechanics (two-body, Vulkan-free;
 │                          #                Fortran kernels via iso_c_binding when gfortran is found,
 │                          #                C++ fallback otherwise) + orbit_c.h C ABI + internal.hpp
@@ -115,7 +124,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 │                          #                velocity vector, pixel-anchored HUD
 ├── tools/
 │   ├── aegis_rocket_dump/ # Milestone 5 tool: deterministic rocket scene → rocket_frame.png (ctest)
-│   └── aegis_assembly_check/ # Milestone 7 tool: three-stage rocket build/stage/verify (ctest)
+│   ├── aegis_assembly_check/ # Milestone 7 tool: three-stage rocket build/stage/verify (ctest)
+│   └── aegis_flight_check/ # Milestone 8 tool: three-stage ascent, propellant budget, apogee (ctest)
 ├── tests/                 # zero-dependency unit test harness (aegis_test.hpp)
 ├── shaders/               # quad.vert|frag (sprites/particles/UI), line.vert|frag — GLSL → SPIR-V
 └── CMakePresets.json      # debug / release / ci / headless
@@ -292,6 +302,58 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 - **Deliberately out of scope for M7**: physics/dynamics (M8), propellant consumption (stored
   and aggregated only), rendering/UI + JSON data packs (M9), Δv estimation helpers.
 
+## Design notes (M8)
+
+- **`aegis_physics`** (`engine/physics/`, Vulkan-free, zero new dependencies): rigid-body flight
+  dynamics for an aegis_parts vehicle. SI units inside world units (1 wu == 1 m), masses in the
+  M7 mass units (kg), f64 integration. Flight state is planet-centred world coordinates; the
+  assembly keeps its internal grid coordinates — positions of every material point are preserved
+  exactly across splits (grid→world offsets rotate with `heading − π/2`).
+- **Fixed-step RK4** at `VehicleFlight::kFixedDt = 1/240 s` (deterministic; `advance()` loops
+  whole steps and carries the remainder; unit tests use `tick()`). Mass/CoM/Izz are constant
+  inside a substep; propellant is drained once per tick **before** the RK4 step, so no substep
+  ever sees half-drained tanks.
+- **Propellant model**: ṁ = F / (Isp · g₀), g₀ = 9.80665. Each engine draws from the
+  component-wide pool of tanks reachable from it (BFS over adjacency, sorted part-index order),
+  proportional to remaining propellant — one shared pool per connected component (cross-feed),
+  drained in proportion so co-burning engines share equally. A dry engine emits exactly one
+  `EngineFlameout` and stops producing thrust.
+- **Stage separation**: decouplers fire in M7 firing order; each fire is a two-body split
+  between the detached piece and everything still attached — the **inverse-mass rule** with a
+  running remaining mass, so linear momentum is conserved exactly at every step, including
+  simultaneous multi-decoupler activations. A detached piece carries the vehicle velocity at
+  the instant of its own fire plus its separation share; the line of centers
+  (det CoM − adopted CoM) gives the separation axis — stack splits push along the axis,
+  symmetric radial booster splits cancel in the adopted vehicle.
+- **Detached stages are ballistic free-flyers**: gravity-only integration, surface clamp,
+  tracked in `detached_stages()`. Fairings are deleted by M7 (jettison tombstones them) and are
+  deliberately *not* tracked as debris.
+- **Contact model**: airborne spawn only — a vehicle spawned at r ≤ R is pinned to the surface
+  sphere (radial velocity removed, tangential preserved). Approach speed beyond
+  `ContactConfig.impact_threshold` (default 5 m/s) → `Impacted` (energy-free dead stop, engines
+  cut, `finished() == true`); otherwise a soft touchdown (`Grounded` + one-shot `Touchdown`).
+  No pads or launch hardware.
+- **Aerodynamics**: quadratic drag opposing velocity (constant `AeroConfig.reference_area`),
+  exponential atmosphere (ρ₀ scale height H, hard zero above `atmosphere_top`), optional
+  weathercock stability (opt-in `weathercock_gain`; 0 disables) and angular damping.
+- **Events** (drain with `take_events()`): `EngineIgnited`, `EngineFlameout`, `StageSeparated`,
+  `FairingJettisoned`, `Touchdown`, `Impact` — the hook surface for later milestones
+  (audio/UI/HUD).
+- **`aegis_flight_check`** (registered with ctest, always runs — no driver needed): flies the
+  M7 demo rocket on an Earth-like body — liftoff on three Sparrows, liftoff-group separation at
+  t = 15 s, Kestrel upper-stage burn, stage-2 separation, fairing jettison — asserting event
+  counts, detached-stage tracking, the adopted-assembly state machine and the full propellant
+  budget (1,680 kg across four tanks, component-wide proportional pool; 1,155 kg drained,
+  apogee ≈ 21.9 km). Prints `FLIGHT/ASCENT_VERIFIED`.
+- **Orbit oracle** (unit test): a coasting post-cutoff segment matches
+  `state_at(elements_from_state(state))` within 1e-6 wu over 10 s — `elements_from_state`
+  (new in `aegis_orbit`) recovers Keplerian elements (semi-major axis, eccentricity,
+  periapsis angle) from a Cartesian state, and flags hyperbolic (unbound) trajectories.
+- **Deliberately out of scope for M8**: rotating planet (no Coriolis), wind, multi-body /
+  patched conics on the vehicle side, launch pads, auto-sized drag area, attitude control
+  laws beyond the pitch/torque hook, fairings as tracked debris, fin aerodynamics, Δv
+  estimation helpers.
+
 ## Design notes (M5)
 
 - **`aegis_offscreen`**: a surface-free Vulkan path for headless frame capture. One private
@@ -321,12 +383,14 @@ This repository's CI environment has **no Vulkan driver and no GPU**. What that 
 
 - Everything compiles warning-free on `debug`, `ci` (`-Werror`) and `headless` presets.
 - All Vulkan-free logic (allocator, Result, logging, projection, camera, orbital mechanics,
-  PNG round trip, parts/staging, …) is unit-tested — 96/96 tests pass (2,365 checks) with the
-  C++ Fortran fallback path active (this container has no gfortran); with Fortran enabled the
-  suite gains the three A/B equivalence groups (98 tests total).
-- `ctest` runs 4 cases: `aegis_tests`, `aegis_roundtrip`, `aegis_rocket_dump` and
-  `aegis_assembly_check` — the two driver-dependent tools **skip cleanly (exit 0)** without a
-  driver; `aegis_assembly_check` is driver-free and always runs.
+  PNG round trip, parts/staging, flight dynamics & propellant drain, …) is unit-tested —
+  129/129 tests pass (2,455 checks) with the C++ Fortran fallback path active (this container
+  has no gfortran); with Fortran enabled the suite additionally gains the three A/B
+  kernel-equivalence groups.
+- `ctest` runs 5 cases: `aegis_tests`, `aegis_roundtrip`, `aegis_rocket_dump`,
+  `aegis_assembly_check` and `aegis_flight_check` — the two driver-dependent tools **skip
+  cleanly (exit 0)** without a driver; `aegis_assembly_check` and `aegis_flight_check` are
+  driver-free and always run.
 - Fortran kernel path: the container has no gfortran, so the .f90 itself is line-audited
   (132-col/literal-kind/continuation checks) rather than compiled. The ABI is machine-checked:
   `orbit_c.h` parses as C99 (-Wall -Wextra -Werror) and as C++; the `#ifdef AEGIS_HAVE_FORTRAN`

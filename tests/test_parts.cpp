@@ -664,5 +664,45 @@ AEGIS_TEST(parts, "hash_cell distinguishes negative and transposed coordinates")
     AEGIS_CHECK(hash_cell(0, 1) != hash_cell(1, 0));
 }
 
+// ---------------------------------------------------------------------------
+// Propellant consumption (M8)
+// ---------------------------------------------------------------------------
+
+AEGIS_TEST(parts, "consume_propellant drains a tank exactly") {
+    DemoRocket r = build_demo_rocket();
+    const core::Result<f32> drained = r.asmbl.consume_propellant(r.tank2, 100.0f);
+    AEGIS_REQUIRE(drained.has_value());
+    AEGIS_CHECK(near(drained.value(), 100.0f));
+    AEGIS_CHECK(near(r.asmbl.mass_properties().propellant_mass, 1580.0f, 1e-3f));
+    AEGIS_CHECK(near(r.asmbl.mass_properties().total_mass, 4143.0f - 100.0f, 1e-3f));
+}
+
+AEGIS_TEST(parts, "consume_propellant clamps at the remaining propellant") {
+    DemoRocket r = build_demo_rocket();
+    const core::Result<f32> drained = r.asmbl.consume_propellant(r.tank2, 9999.0f);
+    AEGIS_REQUIRE(drained.has_value());
+    AEGIS_CHECK(near(drained.value(), 420.0f));
+    AEGIS_CHECK(near(r.asmbl.mass_properties().propellant_mass, 1260.0f, 1e-3f));
+}
+
+AEGIS_TEST(parts, "consume_propellant rejects negative amounts") {
+    DemoRocket r = build_demo_rocket();
+    const core::Result<f32> drained = r.asmbl.consume_propellant(r.tank2, -5.0f);
+    AEGIS_CHECK(!drained.has_value());
+}
+
+AEGIS_TEST(parts, "consume_propellant rejects non-tank parts") {
+    DemoRocket r = build_demo_rocket();
+    const core::Result<f32> drained = r.asmbl.consume_propellant(r.pod, 1.0f);
+    AEGIS_CHECK(!drained.has_value());
+}
+
+AEGIS_TEST(parts, "consume_propellant rejects tombstoned parts") {
+    DemoRocket r = build_demo_rocket();
+    AEGIS_REQUIRE(r.asmbl.remove(r.tank2).has_value());
+    const core::Result<f32> drained = r.asmbl.consume_propellant(r.tank2, 1.0f);
+    AEGIS_CHECK(!drained.has_value());
+}
+
 }  // namespace
 }  // namespace aegis::parts

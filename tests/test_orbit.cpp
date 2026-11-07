@@ -163,3 +163,49 @@ AEGIS_TEST(orbit, "period and radius helpers agree with the elements") {
     expect_near(aegis::orbit::orbital_period(elements), 26.0, 1e-6, "period == demo T");
     expect_near(aegis::orbit::mean_motion(elements), kTwoPi / 26.0, 1e-9, "n == 2pi / T");
 }
+
+AEGIS_TEST(orbit, "elements_from_state round-trips an elliptical orbit") {
+    const Elements reference = demo_elements(0.28);
+    const f64 mu = reference.gravitational_parameter;
+    constexpr f64 kProbeTime = 3.7;
+    const State probe = aegis::orbit::state_at(reference, kProbeTime);
+
+    const auto position = std::array<f64, 2>{probe.position[0], probe.position[1]};
+    const auto velocity = std::array<f64, 2>{probe.velocity[0], probe.velocity[1]};
+    const Elements recovered = aegis::orbit::elements_from_state(position, velocity, mu, kProbeTime);
+
+    expect_near(recovered.semi_major_axis, reference.semi_major_axis, 1e-6, "semi-major axis round-trips");
+    expect_near(recovered.eccentricity, reference.eccentricity, 1e-9, "eccentricity round-trips");
+    expect_near(recovered.periapsis_angle, reference.periapsis_angle, 1e-9, "periapsis angle round-trips");
+    expect_near(aegis::orbit::orbital_period(recovered), aegis::orbit::orbital_period(reference),
+                1e-6, "period round-trips");
+
+    // The recovered elements must propagate to the same position.
+    const State state = aegis::orbit::state_at(recovered, kProbeTime + 8.3);
+    const State expected = aegis::orbit::state_at(reference, kProbeTime + 8.3);
+    expect_near(state.position[0], expected.position[0], 1e-5, "x after round-trip matches");
+    expect_near(state.position[1], expected.position[1], 1e-5, "y after round-trip matches");
+}
+
+AEGIS_TEST(orbit, "elements_from_state recovers a circular orbit") {
+    const Elements reference = demo_elements(0.0);
+    const f64 mu = reference.gravitational_parameter;
+    constexpr f64 kProbeTime = 1.1;
+    const State probe = aegis::orbit::state_at(reference, kProbeTime);
+
+    const auto position = std::array<f64, 2>{probe.position[0], probe.position[1]};
+    const auto velocity = std::array<f64, 2>{probe.velocity[0], probe.velocity[1]};
+    const Elements recovered = aegis::orbit::elements_from_state(position, velocity, mu, kProbeTime);
+
+    expect_near(recovered.semi_major_axis, reference.semi_major_axis, 1e-6, "circular a round-trips");
+    expect_near(recovered.eccentricity, 0.0, 1e-12, "circular e round-trips to zero");
+}
+
+AEGIS_TEST(orbit, "elements_from_state flags a hyperbolic (unbound) trajectory") {
+    const f64 mu = 1.0;
+    const std::array<f64, 2> position{1.5, 0.0};
+    const std::array<f64, 2> velocity{0.0, 2.0};  // escape speed at r=1.5 is sqrt(2/1.5) ~= 1.155
+    const Elements elements = aegis::orbit::elements_from_state(position, velocity, mu, 0.0);
+    AEGIS_CHECK(elements.eccentricity >= 1.0);
+    AEGIS_CHECK(!(elements.semi_major_axis > 0.0));
+}

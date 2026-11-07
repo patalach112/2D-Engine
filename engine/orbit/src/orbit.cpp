@@ -26,6 +26,7 @@ using core::f64;
 namespace {
 
 constexpr f64 kTwoPi = 6.2831853071795864769;
+constexpr f64 kPi = 3.14159265358979323846;
 
 }  // namespace
 
@@ -37,6 +38,60 @@ f64 orbital_period(const Elements& elements) noexcept {
 f64 mean_motion(const Elements& elements) noexcept {
     const f64 a = elements.semi_major_axis;
     return std::sqrt(elements.gravitational_parameter / (a * a * a));
+}
+
+Elements elements_from_state(std::array<core::f64, 2> position,
+                             std::array<core::f64, 2> velocity,
+                             const f64 gravitational_parameter, const f64 t) noexcept {
+    const f64 mu = gravitational_parameter;
+    const f64 r = std::hypot(position[0], position[1]);
+    const f64 v2 = velocity[0] * velocity[0] + velocity[1] * velocity[1];
+    const f64 r_dot_v = position[0] * velocity[0] + position[1] * velocity[1];
+
+    // Eccentricity vector: e_vec = ((v^2 - mu/r) * r_vec - (r·v) * v_vec) / mu
+    const f64 scale = (v2 - mu / r) / mu;
+    const f64 evx = scale * position[0] - (r_dot_v / mu) * velocity[0];
+    const f64 evy = scale * position[1] - (r_dot_v / mu) * velocity[1];
+    const f64 eccentricity = std::hypot(evx, evy);
+
+    // Semi-major axis from orbital energy (negative when unbound).
+    const f64 energy = v2 * 0.5 - mu / r;
+    const f64 semi_major_axis = -mu / (2.0 * energy);
+
+    Elements elements{};
+    elements.eccentricity = eccentricity;
+    elements.semi_major_axis = semi_major_axis;
+    elements.gravitational_parameter = mu;
+
+    const f64 r_vec_angle = std::atan2(position[1], position[0]);
+    if (eccentricity > 1e-12) {
+        elements.periapsis_angle = std::atan2(evy, evx);
+    } else {
+        elements.periapsis_angle = 0.0;  // circular — periapsis direction is arbitrary
+    }
+
+    // True anomaly: angle from periapsis direction to the radius vector.
+    f64 true_anomaly = r_vec_angle - elements.periapsis_angle;
+    while (true_anomaly > kPi) {
+        true_anomaly -= kTwoPi;
+    }
+    while (true_anomaly <= -kPi) {
+        true_anomaly += kTwoPi;
+    }
+
+    if (!(semi_major_axis > 0.0) || eccentricity >= 1.0) {
+        elements.periapsis_time = t;  // unbound trajectory — state_at() precondition violated anyway
+        return elements;
+    }
+
+    // Eccentric anomaly via the half-angle form (quadrant-safe).
+    const f64 half = true_anomaly * 0.5;
+    const f64 eccentric_anomaly = 2.0 * std::atan2(std::sqrt(1.0 - eccentricity) * std::sin(half),
+                                                   std::sqrt(1.0 + eccentricity) * std::cos(half));
+    const f64 mean_anomaly = eccentric_anomaly - eccentricity * std::sin(eccentric_anomaly);
+    const f64 n = std::sqrt(mu / (semi_major_axis * semi_major_axis * semi_major_axis));
+    elements.periapsis_time = t - mean_anomaly / n;
+    return elements;
 }
 
 f64 solve_kepler(const f64 mean_anomaly, const f64 eccentricity) noexcept {
