@@ -2,7 +2,8 @@
 
 add_library(aegis_orbit STATIC
     src/orbit.cpp
-    src/orbit_fallback.cpp)
+    src/orbit_fallback.cpp
+    src/ballistic.cpp)
 add_library(aegis::orbit ALIAS aegis_orbit)
 
 target_include_directories(aegis_orbit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

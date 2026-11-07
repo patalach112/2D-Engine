@@ -38,6 +38,16 @@ struct SceneState {
     core::f64 map_periapsis_alt = -1.0;
     core::f64 map_period_s = 0.0;
     core::f64 map_cache_time = -1.0e9;
+
+    // Ballistic prediction cache (M10.2) — filled when the trajectory is NOT a
+    // closed orbit above the surface (suborbital hop or open escape trajectory).
+    std::vector<std::array<core::f32, 2>> map_ballistic_arc;  ///< y-rebased gravity-only polyline
+    std::array<core::f32, 2> map_impact_xy{};                 ///< y-rebased impact point (valid when map_impact_pending)
+    bool map_impact_pending = false;     ///< an impact is pending (trajectory reaches the surface)
+    core::f64 map_impact_in_s = -1.0;    ///< seconds from the cache build to impact
+    core::f64 map_cache_flight_time = 0.0;  ///< fs.time at the cache build (countdown base)
+    core::f64 map_t_ap_s = -1.0;         ///< time to apoapsis (closed orbits; else -1)
+    core::f64 map_t_pe_s = -1.0;         ///< time to periapsis (closed orbits; else -1)
 };
 
 void scene_state_init(SceneState& state) noexcept;

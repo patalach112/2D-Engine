@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 using aegis::renderer2d::BatchRenderer;
 using aegis::renderer2d::Camera2D;
@@ -107,6 +108,10 @@ void scene_state_init(SceneState& state) noexcept {
     state.map_seeded = false;
     state.map_cache_time = -1.0e9;
     state.map_points.clear();
+    state.map_ballistic_arc.clear();
+    state.map_impact_pending = false;
+    state.map_impact_in_s = -1.0;
+    state.map_t_ap_s = state.map_t_pe_s = -1.0;
 }
 
 void scene_state_reset_flight(SceneState& state) noexcept {
@@ -114,6 +119,10 @@ void scene_state_reset_flight(SceneState& state) noexcept {
     state.map_seeded = false;
     state.map_cache_time = -1.0e9;
     state.map_points.clear();
+    state.map_ballistic_arc.clear();
+    state.map_impact_pending = false;
+    state.map_impact_in_s = -1.0;
+    state.map_t_ap_s = state.map_t_pe_s = -1.0;
 }
 
 // ---------------------------------------------------------------- VAB
@@ -358,39 +367,145 @@ void update_map_cache(SceneState& state, const aegis::physics::VehicleFlight& fl
     state.map_apoapsis_alt = -1.0;
     state.map_periapsis_alt = -1.0;
     state.map_period_s = 0.0;
+    state.map_ballistic_arc.clear();
+    state.map_impact_pending = false;
+    state.map_impact_in_s = -1.0;
+    state.map_cache_flight_time = 0.0;
+    state.map_t_ap_s = -1.0;
+    state.map_t_pe_s = -1.0;
 
     const aegis::physics::FlightState& fs = flight.state();
+    const core::f64 speed2 = fs.velocity.x * fs.velocity.x + fs.velocity.y * fs.velocity.y;
     state.map_elements = aegis::orbit::elements_from_state({fs.position.x, fs.position.y},
                                                            {fs.velocity.x, fs.velocity.y}, kEarthMu, fs.time);
-    if (state.map_elements.eccentricity >= 1.0) {
-        return;  // unbound — no closed polyline; caller prints the caveat
+    if (speed2 < 1.0) {
+        return;  // parked on the pad — nothing to predict; the map shows the horizon only
     }
-    state.map_points = aegis::orbit::sample_path(state.map_elements, 128);
-    for (auto& point : state.map_points) {
-        point[1] = static_cast<core::f32>(static_cast<core::f64>(point[1]) - kEarthRadius);  // rebase
+    const bool closed_orbit = state.map_elements.eccentricity < 1.0 &&
+                              aegis::orbit::periapsis_radius(state.map_elements) >= kEarthRadius;
+    if (closed_orbit) {
+        state.map_points = aegis::orbit::sample_path(state.map_elements, 128);
+        for (auto& point : state.map_points) {
+            point[1] = static_cast<core::f32>(static_cast<core::f64>(point[1]) - kEarthRadius);  // rebase
+        }
+        state.map_apoapsis_alt = aegis::orbit::apoapsis_radius(state.map_elements) - kEarthRadius;
+        state.map_periapsis_alt = aegis::orbit::periapsis_radius(state.map_elements) - kEarthRadius;
+        state.map_period_s = aegis::orbit::orbital_period(state.map_elements);
+
+        // Time to the next apoapsis / periapsis passage. periapsis_time is the
+        // absolute time of the last (or next) periapsis; re-derive the mean
+        // anomaly at `fs.time` and measure to M = pi (apo) and M = 2*pi (peri).
+        const core::f64 two_pi = 2.0 * static_cast<core::f64>(kPi);
+        const core::f64 pi = static_cast<core::f64>(kPi);
+        const core::f64 n = aegis::orbit::mean_motion(state.map_elements);
+        const core::f64 period = two_pi / n;
+        core::f64 M = n * (fs.time - state.map_elements.periapsis_time);
+        M = std::fmod(M, two_pi);
+        if (M < 0.0) {
+            M += two_pi;
+        }
+        core::f64 t_ap = (pi - M) / n;
+        if (t_ap < 0.0) {
+            t_ap += period;
+        }
+        state.map_t_ap_s = t_ap;
+        state.map_t_pe_s = M == 0.0 ? 0.0 : (two_pi - M) / n;
+        return;
     }
-    state.map_apoapsis_alt = aegis::orbit::apoapsis_radius(state.map_elements) - kEarthRadius;
-    state.map_periapsis_alt = aegis::orbit::periapsis_radius(state.map_elements) - kEarthRadius;
-    state.map_period_s = aegis::orbit::orbital_period(state.map_elements);
+
+    // Not a closed orbit: either unbound, or bound-but-impacting. Integrate
+    // the gravity-only arc to find the impact point and the time to it.
+    const aegis::orbit::BallisticPrediction prediction =
+        aegis::orbit::predict_ballistic({fs.position.x, fs.position.y}, {fs.velocity.x, fs.velocity.y},
+                                        kEarthMu, kEarthRadius, 3600.0);
+    state.map_ballistic_arc.reserve(prediction.arc.size());
+    for (const auto& point : prediction.arc) {
+        state.map_ballistic_arc.push_back({static_cast<core::f32>(point[0]),
+                                           static_cast<core::f32>(point[1] - kEarthRadius)});
+    }
+    if (state.map_elements.eccentricity < 1.0) {
+        // Suborbital ellipse — AP still meaningful; PE (below surface) is not.
+        state.map_apoapsis_alt = aegis::orbit::apoapsis_radius(state.map_elements) - kEarthRadius;
+    }
+    if (prediction.impacts) {
+        state.map_impact_pending = true;
+        state.map_impact_in_s = prediction.impact_in_s;
+        state.map_cache_flight_time = fs.time;
+        state.map_impact_xy = {static_cast<core::f32>(prediction.impact_position[0]),
+                            static_cast<core::f32>(prediction.impact_position[1] - kEarthRadius)};
+    }
 }
 
+/// Draws the trajectory polyline in two passes: a wide, faint glow line
+/// followed by a narrow bright core. `warm` styles ballistic (suborbital)
+/// arcs orange; bound/orbital arcs draw cool blue. Segments dipping under
+/// the surface are clipped out.
 void draw_trajectory(BatchRenderer& renderer, const aegis::renderer2d::Camera2D& camera,
-                     const std::vector<std::array<core::f32, 2>>& points) noexcept {
+                     const std::vector<std::array<core::f32, 2>>& points, const bool warm) noexcept {
     if (points.size() < 2) {
         return;
     }
     const core::f32 wpp = camera.world_per_pixel();
     const core::f32 thickness = wpp * 2.2f;
+    const core::f32 glow_thickness = wpp * 6.5f;
+    const core::f32 glow_alpha = warm ? 0.16f : 0.13f;
+    const core::f32 glow_r = warm ? 1.0f : 0.42f;
+    const core::f32 glow_g = warm ? 0.72f : 0.62f;
+    const core::f32 glow_b = warm ? 0.42f : 0.98f;
+    const core::f32 core_r = warm ? 0.98f : 0.46f;
+    const core::f32 core_g = warm ? 0.78f : 0.66f;
+    const core::f32 core_b = warm ? 0.50f : 1.0f;
     auto above_surface = [&](const std::array<core::f32, 2>& p) {
         const core::f64 x = p[0], y = static_cast<core::f64>(p[1]) + kEarthRadius;
         return x * x + y * y >= kEarthRadius * kEarthRadius;
     };
+    // Pass 1 — the glow bed.
     for (std::size_t i = 0; i + 1 < points.size(); ++i) {
         if (!above_surface(points[i]) || !above_surface(points[i + 1])) {
-            continue;  // segment dips into the planet — clip it out
+            continue;
         }
-        renderer.draw_line(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1], 0.46f, 0.66f, 1.0f,
-                           0.6f, thickness, 0.1f);
+        renderer.draw_line(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1], glow_r, glow_g,
+                           glow_b, glow_alpha, glow_thickness, 0.1f);
+    }
+    // Pass 2 — the bright core.
+    for (std::size_t i = 0; i + 1 < points.size(); ++i) {
+        if (!above_surface(points[i]) || !above_surface(points[i + 1])) {
+            continue;
+        }
+        renderer.draw_line(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1], core_r, core_g,
+                           core_b, 0.85f, thickness, 0.1f);
+    }
+}
+
+/// Impact marker: a red-orange dot on the horizon line with a thin cross.
+void draw_impact_marker(BatchRenderer& renderer, const aegis::renderer2d::Camera2D& camera,
+                        const std::array<core::f32, 2>& xy) noexcept {
+    const core::f32 wpp = camera.world_per_pixel();
+    const core::f32 dot_size = 13.0f * wpp;
+    aegis::renderer2d::SpriteInstance dot{};
+    dot.x = xy[0];
+    dot.y = xy[1];
+    dot.width = dot_size;
+    dot.height = dot_size;
+    dot.r = 1.0f;
+    dot.g = 0.38f;
+    dot.b = 0.22f;
+    dot.a = 1.0f;
+    dot.softness = -1.0f;
+    renderer.draw_sprite(dot);
+    for (const core::f32 angle : {0.78539816339f, -0.78539816339f}) {
+        aegis::renderer2d::SpriteInstance bar{};
+        bar.x = xy[0];
+        bar.y = xy[1];
+        bar.width = 24.0f * wpp;
+        bar.height = 2.4f * wpp;
+        bar.rotation = angle;
+        bar.r = 1.0f;
+        bar.g = 0.55f;
+        bar.b = 0.30f;
+        bar.a = 0.95f;
+        bar.softness = -1.0f;
+        renderer.draw_sprite(bar);
     }
 }
 
@@ -529,7 +644,16 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         // --- full-screen map mode ---------------------------------------
         aegis::render::draw_sky(renderer, camera, /*altitude_fraction=*/1.0f, /*star_seed=*/0xA0B1E5u);
         draw_map_horizon(renderer, camera);
-        draw_trajectory(renderer, camera, state.map_points);
+        if (!state.map_points.empty()) {
+            draw_trajectory(renderer, camera, state.map_points, /*warm=*/false);
+        } else if (!state.map_ballistic_arc.empty()) {
+            draw_trajectory(renderer, camera, state.map_ballistic_arc, /*warm=*/true);
+        }
+        if (state.map_impact_pending) {
+            draw_impact_marker(renderer, camera, state.map_impact_xy);
+            const auto [ix, iy] = camera.world_to_screen(state.map_impact_xy[0], state.map_impact_xy[1]);
+            ui.text(ix + 12.0f, iy + 2.0f, 10.0f, "IMPACT", aegis::ui::rgb(1.0f, 0.55f, 0.35f));
+        }
         // Apoapsis / periapsis markers.
         const core::f64 omega = state.map_elements.periapsis_angle;
         const core::f64 peri_alt_check = session.periapsis_m();
@@ -602,6 +726,7 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         const core::f64 ballistic_apo =
             altitude + (vr > 0.0 ? (vr * vr) / (2.0 * g_local) : 0.0);
         const bool escaping = unbound && h_ang >= 1.0e3;
+        const bool parked = session.speed_m_s() < 1.0 && altitude < 1.0;
 
         char buffer[160];
         ui.text(22.0f, 16.0f, 22.0f, "ORBITAL MAP", aegis::ui::rgb(0.75f, 0.87f, 1.0f));
@@ -611,21 +736,33 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         std::snprintf(buffer, sizeof(buffer), "PERIAPSIS  %9.1f M", unbound ? 0.0 : session.periapsis_m());
         ui.text(22.0f, 100.0f, 14.0f, buffer,
                 suborbital ? aegis::ui::rgb(0.98f, 0.58f, 0.42f) : aegis::ui::rgb(0.75f, 0.92f, 0.75f));
-        if (suborbital) {
-            ui.text(22.0f, 192.0f, 12.0f, "SUBORBITAL — THE TRAJECTORY IMPACTS THE SURFACE",
+        if (!parked && suborbital && state.map_impact_pending) {
+            ui.text(22.0f, 196.0f, 12.0f, "SUBORBITAL — THE TRAJECTORY IMPACTS THE SURFACE",
                     aegis::ui::rgb(0.98f, 0.62f, 0.38f));
         }
         std::snprintf(buffer, sizeof(buffer), "ALTITUDE   %9.1f M", altitude);
         ui.text(22.0f, 122.0f, 14.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
         std::snprintf(buffer, sizeof(buffer), "VELOCITY   %9.1f M/S", session.speed_m_s());
         ui.text(22.0f, 144.0f, 14.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
-        if (escaping) {
-            ui.text(22.0f, 172.0f, 13.0f, "UNBOUND TRAJECTORY", aegis::ui::rgb(0.95f, 0.6f, 0.4f));
-        } else if (unbound) {
-            ui.text(22.0f, 172.0f, 13.0f, "BALLISTIC ARC", aegis::ui::rgb(0.95f, 0.6f, 0.4f));
-        } else {
+        if (parked) {
+            ui.text(22.0f, 172.0f, 13.0f, "PARKED ON THE PAD", aegis::ui::rgb(0.55f, 0.60f, 0.72f));
+        } else if (!suborbital) {
             std::snprintf(buffer, sizeof(buffer), "PERIOD     %9.1f S", state.map_period_s);
             ui.text(22.0f, 172.0f, 14.0f, buffer, aegis::ui::rgb(0.65f, 0.70f, 0.80f));
+            if (state.map_t_ap_s >= 0.0 && state.map_t_pe_s >= 0.0) {
+                std::snprintf(buffer, sizeof(buffer), "T+AP %6.1f S   T+PE %7.1f S", state.map_t_ap_s,
+                              state.map_t_pe_s);
+                ui.text(22.0f, 196.0f, 12.0f, buffer, aegis::ui::rgb(0.55f, 0.60f, 0.72f));
+            }
+        } else if (state.map_impact_pending) {
+            const core::f64 remaining =
+                std::max(0.0, state.map_impact_in_s - (fs.time - state.map_cache_flight_time));
+            std::snprintf(buffer, sizeof(buffer), "IMPACT T- %7.1f S", remaining);
+            ui.text(22.0f, 172.0f, 15.0f, buffer, aegis::ui::rgb(0.99f, 0.62f, 0.35f));
+        } else if (escaping) {
+            ui.text(22.0f, 172.0f, 13.0f, "UNBOUND TRAJECTORY", aegis::ui::rgb(0.95f, 0.6f, 0.4f));
+        } else {
+            ui.text(22.0f, 172.0f, 13.0f, "BALLISTIC ARC", aegis::ui::rgb(0.95f, 0.6f, 0.4f));
         }
         aegis::render::submit_ui(renderer, camera, ui);
         return;

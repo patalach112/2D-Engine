@@ -5,9 +5,11 @@
 
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <string>
 
 using aegis::core::f64;
+using aegis::orbit::BallisticPrediction;
 using aegis::orbit::Elements;
 using aegis::orbit::State;
 
@@ -208,4 +210,84 @@ AEGIS_TEST(orbit, "elements_from_state flags a hyperbolic (unbound) trajectory")
     const Elements elements = aegis::orbit::elements_from_state(position, velocity, mu, 0.0);
     AEGIS_CHECK(elements.eccentricity >= 1.0);
     AEGIS_CHECK(!(elements.semi_major_axis > 0.0));
+}
+
+AEGIS_TEST(orbit, "predict_ballistic vertical throw impacts with the right hang time") {
+    constexpr f64 mu = 3.986004418e14;
+    constexpr f64 radius = 6.371e6;
+    const std::array<f64, 2> position{radius, 0.0};
+    const std::array<f64, 2> velocity{500.0, 0.0};  // straight up (+X is radial at this point)
+    const BallisticPrediction pred = aegis::orbit::predict_ballistic(position, velocity, mu, radius, 300.0);
+    AEGIS_REQUIRE(pred.impacts);
+    // Constant-g estimate: 2*v/g0 ~= 102 s; central gravity softens with
+    // altitude, stretching the hang time slightly.
+    const f64 g0 = mu / (radius * radius);
+    const f64 t_flat = 2.0 * 500.0 / g0;
+    AEGIS_CHECK(std::fabs(pred.impact_in_s - t_flat) / t_flat < 0.02);
+    const f64 impact_radius = std::hypot(pred.impact_position[0], pred.impact_position[1]);
+    AEGIS_CHECK(std::fabs(impact_radius - radius) < 1.0);
+    AEGIS_CHECK(std::fabs(pred.impact_position[1]) < 1.0);   // strictly radial — no sideways drift
+    AEGIS_CHECK(pred.impact_speed > 490.0 && pred.impact_speed < 510.0);
+    AEGIS_CHECK(pred.arc.size() >= 2);
+}
+
+AEGIS_TEST(orbit, "predict_ballistic 45-degree throw matches the flat-earth range") {
+    constexpr f64 mu = 3.986004418e14;
+    constexpr f64 radius = 6.371e6;
+    const f64 v = 120.0;
+    const f64 c = std::cos(0.7853981633974483);
+    const f64 s = std::sin(0.7853981633974483);
+    const std::array<f64, 2> position{radius, 0.0};
+    const std::array<f64, 2> velocity{v * c, v * s};
+    const BallisticPrediction pred = aegis::orbit::predict_ballistic(position, velocity, mu, radius, 120.0);
+    AEGIS_REQUIRE(pred.impacts);
+    const f64 g0 = mu / (radius * radius);
+    const f64 range_flat = v * v / g0;  // ~1.47 km
+    // Horizontal distance along the arc between the two surface endpoints.
+    const f64 cos_angle =
+        (position[0] * pred.impact_position[0] + position[1] * pred.impact_position[1]) /
+        (radius * radius);
+    const f64 range = std::acos(std::min(1.0, std::max(-1.0, cos_angle))) * radius;
+    AEGIS_CHECK(std::fabs(range - range_flat) / range_flat < 0.03);
+}
+
+AEGIS_TEST(orbit, "predict_ballistic reports no impact for an escape trajectory") {
+    constexpr f64 mu = 3.986004418e14;
+    constexpr f64 radius = 6.371e6;
+    const std::array<f64, 2> position{radius + 1000.0, 0.0};  // 1 km up, tangential
+    const std::array<f64, 2> velocity{0.0, 12000.0};           // escape at the surface is ~11.2 km/s
+    const BallisticPrediction pred = aegis::orbit::predict_ballistic(position, velocity, mu, radius, 600.0);
+    AEGIS_CHECK(!pred.impacts);
+    AEGIS_CHECK(pred.arc.size() >= 2);
+    AEGIS_CHECK(std::hypot(pred.arc.back()[0], pred.arc.back()[1]) > radius);
+}
+
+AEGIS_TEST(orbit, "predict_ballistic is deterministic byte for byte") {
+    constexpr f64 mu = 3.986004418e14;
+    constexpr f64 radius = 6.371e6;
+    const std::array<f64, 2> position{radius, 0.0};
+    const std::array<f64, 2> velocity{120.0, 120.0};
+    const BallisticPrediction a = aegis::orbit::predict_ballistic(position, velocity, mu, radius, 60.0);
+    const BallisticPrediction b = aegis::orbit::predict_ballistic(position, velocity, mu, radius, 60.0);
+    AEGIS_REQUIRE(a.arc.size() == b.arc.size());
+    AEGIS_CHECK(a.impacts == b.impacts);
+    AEGIS_CHECK(std::memcmp(&a.impact_in_s, &b.impact_in_s, sizeof(f64)) == 0);
+    for (std::size_t i = 0; i < a.arc.size(); ++i) {
+        AEGIS_CHECK(a.arc[i][0] == b.arc[i][0] && a.arc[i][1] == b.arc[i][1]);
+    }
+}
+
+AEGIS_TEST(orbit, "predict_ballistic degenerate inputs return a no-prediction result") {
+    constexpr f64 mu = 3.986004418e14;
+    constexpr f64 radius = 6.371e6;
+    const std::array<f64, 2> position{radius + 100.0, 0.0};  // 100 m up — not touching the pad
+    const std::array<f64, 2> velocity{0.0, 100.0};
+    AEGIS_CHECK(!aegis::orbit::predict_ballistic(position, velocity, mu, radius, 0.0).impacts);
+    AEGIS_CHECK(!aegis::orbit::predict_ballistic(position, velocity, 0.0, radius, 60.0).impacts);
+    AEGIS_CHECK(!aegis::orbit::predict_ballistic(position, velocity, std::nan(""), radius, 60.0).impacts);
+    const std::array<f64, 2> rest{radius, 0.0};  // exactly on the surface, at rest
+    const BallisticPrediction touching =
+        aegis::orbit::predict_ballistic(rest, std::array<f64, 2>{0.0, 0.0}, mu, radius, 60.0);
+    AEGIS_CHECK(touching.impacts);
+    AEGIS_CHECK(touching.impact_in_s == 0.0);
 }

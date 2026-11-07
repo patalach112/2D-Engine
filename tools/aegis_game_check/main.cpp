@@ -10,7 +10,9 @@
 // produce identical frames on the same driver.
 //
 // Usage:
-//   aegis_game_check [output_prefix]     (default: names above in the CWD)
+//   aegis_game_check [output_prefix] [flight_seconds]
+//     output_prefix  — file prefix, "" (default) writes the names above in the CWD
+//     flight_seconds — simulated time before the flight/map shots (default 2.0)
 //
 // Exit codes: 0 on success OR when no Vulkan loader/driver is available
 // (SKIP — CI-safe, like aegis_rocket_dump); 1 on a real failure.
@@ -30,6 +32,7 @@
 
 #include <cstring>
 #include <string>
+#include <stdexcept>
 
 using namespace aegis;
 
@@ -37,7 +40,7 @@ namespace {
 
 constexpr core::u32 kWidth = 1280;
 constexpr core::u32 kHeight = 720;
-constexpr core::f64 kFlightSeconds = 2.0;  ///< simulated time before the flight/map shots
+constexpr core::f64 kDefaultFlightSeconds = 2.0;  ///< simulated time before the flight/map shots
 constexpr core::f64 kWallClockSeconds = 12.5;  ///< fixed VAB clock (drives pulse animations)
 
 void draw_vab_frame(renderer2d::BatchRenderer& renderer, game::SceneState& state,
@@ -54,6 +57,7 @@ void draw_flight_frame(renderer2d::BatchRenderer& renderer, game::SceneState& st
 
 int main(int argc, char** argv) {
     const std::string prefix = argc > 1 ? std::string(argv[1]) + "_" : "";
+    const core::f64 flight_seconds = argc > 2 ? std::stod(argv[2]) : kDefaultFlightSeconds;
     AEGIS_LOG_INFO("Aegis2D — Milestone 9: aegis_game_check (v" << aegis::core::kVersionString << ")");
 
     // --- Headless Vulkan bootstrap (no window, no surface, no swapchain) -------
@@ -128,7 +132,7 @@ int main(int argc, char** argv) {
                                 << session.launch_blocker());
                 return 1;
             }
-            const core::u32 steps = static_cast<core::u32>(kFlightSeconds * 60.0);
+            const core::u32 steps = static_cast<core::u32>(flight_seconds * 60.0);
             for (core::u32 i = 0; i < steps; ++i) {
                 session.update(1.0 / 60.0);
             }

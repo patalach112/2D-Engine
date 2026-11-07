@@ -64,4 +64,31 @@ struct State {
 [[nodiscard]] std::vector<std::array<core::f32, 2>> sample_path(const Elements& elements,
                                                                 core::u32 samples);
 
+struct BallisticPrediction {
+    bool impacts = false;                        ///< true when the arc reaches the surface within max_t
+    core::f64 impact_in_s = 0.0;                 ///< seconds from the input state to surface crossing
+    std::array<core::f64, 2> impact_position{};  ///< world coordinates at the crossing point
+    core::f64 impact_speed = 0.0;                ///< |velocity| at impact (world units / s)
+    std::vector<std::array<core::f64, 2>> arc;   ///< trajectory polyline, world coordinates
+};
+
+/// Integrates the gravity-only (no thrust, no atmosphere) equations of motion
+/// — a = -mu * r_vec / |r_vec|^3 — with a FIXED-STEP RK4 scheme, so identical
+/// inputs always produce identical outputs. When the arc crosses `radius`, the
+/// crossing time is refined by bracketed bisection of the last step (each
+/// trial integrates a partial step with the same RK4 rule).
+///
+/// Returns `impacts == false` (with the outbound arc filled in, clipped at
+/// `max_t`) for escape trajectories and for hops too flat to land in time.
+/// Resolution is deterministic: short hops (constant-g estimate <= 300 s) get
+/// ~300 steps to the crossing; anything else gets max_t / 1200. The loop is
+/// hard-capped at 4096 iterations, so a borderline no-impact state yields a
+/// truncated arc instead of running forever. A non-finite or non-positive mu,
+/// or max_t <= 0, yields a default-constructed (non-impacting) result.
+[[nodiscard]] BallisticPrediction predict_ballistic(std::array<core::f64, 2> position,
+                                                    std::array<core::f64, 2> velocity,
+                                                    core::f64 gravitational_parameter,
+                                                    core::f64 radius,
+                                                    core::f64 max_t);
+
 }  // namespace aegis::orbit
