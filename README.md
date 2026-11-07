@@ -4,13 +4,12 @@ Lightweight, ultra-high-performance 2D game engine for **space flight simulation
 C++20, Vulkan 1.3, clean console-style architecture (low-level core + modular renderer,
 batch rendering, offscreen PNG verification).
 
-> **Status: Milestone 1 — Foundation & Vulkan Initialization** ✅ (builds clean, unit tests green)
+> **Status: Milestone 2 — VRAM Allocator & 2D Buffers** ✅ (builds clean, unit tests green)
 >
-> The repository currently builds and links a minimal but real Vulkan 1.3 engine core:
-> windowed (GLFW → swapchain) or headless (offscreen) startup, dynamic rendering
-> (no render passes), and a clear-loop demo. The GPU stack is fully exercised at build
-> time; runtime execution requires a machine with a Vulkan 1.3 driver — see
-> "Verification" below.
+> Device-local GPU arena with a best-fit free list, a persistently mapped staging ring
+> and a TransferQueue (dedicated TRANSFER-family when available, graphics-queue fallback)
+> are in place and byte-verified end-to-end on driver machines via `aegis_roundtrip`.
+> See "Verification" below for what this means on machines without a GPU.
 
 ## Requirements
 
@@ -40,6 +39,9 @@ ctest --preset=debug
 
 # Run the demo (opens a window and clears it; close with the window button)
 ./build/debug/apps/aegis_demo/aegis_demo
+
+# Milestone 2 verification: arena → staging → transfer queue → readback → byte-compare
+./build/debug/apps/aegis_roundtrip/aegis_roundtrip   # "ROUNDTRIP VERIFIED" on driver machines
 ```
 
 ### Headless / CI
@@ -57,8 +59,8 @@ or graceful early exit when a Vulkan driver is absent) with exit code 0.
 
 | # | Milestone | Status |
 |---|-----------|--------|
-| 1 | Foundation & Vulkan Initialization (CMake, volk, glfw, instance, device, swapchain) | ✅ this milestone |
-| 2 | VRAM Allocator & 2D Buffers (vertex/index allocators, TransferQueue) | pending |
+| 1 | Foundation & Vulkan Initialization (CMake, volk, glfw, instance, device, swapchain) | ✅ done |
+| 2 | VRAM Allocator & 2D Buffers (vertex/index allocators, TransferQueue) | ✅ this milestone |
 | 3 | Universal 2D Batch Renderer (instanced rockets/particles/UI) | pending |
 | 4 | Camera & Orbital Trajectory System (2D zoom camera, orbit/velocity lines) | pending |
 | 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | pending |
@@ -69,15 +71,19 @@ or graceful early exit when a Vulkan driver is absent) with exit code 0.
 ├── cmake/                 # AegisDeps.cmake (pinned FetchContent), warning flags
 ├── engine/
 │   ├── core/              # aegis_core       — fixed-width types, Result<T>, logging, asserts (no Vulkan)
-│   └── vk/                # aegis_vk         — volk instance, physical-device scoring, logical device,
-│                          #                    swapchain (+recreate), GLFW surface
+│   ├── vk/                # aegis_vk         — volk instance, physical-device scoring, logical device
+│   │                      #                    (optional dedicated transfer queue), swapchain (+recreate),
+│   │                      #                    GLFW surface
+│   └── memory/            # aegis_memory     — FreeListAllocator (pure), device-local BufferArena,
+│                          #                    StagingRing (persistently mapped), GpuBuffer, TransferQueue
 ├── apps/
-│   └── aegis_demo/        # Milestone 1 demo: window + clear loop (dynamic rendering)
+│   ├── aegis_demo/        # Milestone 1 demo: window + clear loop (dynamic rendering)
+│   └── aegis_roundtrip/   # Milestone 2 check: upload→readback→byte-compare (registered with ctest)
 ├── tests/                 # zero-dependency unit test harness (aegis_test.hpp)
 └── CMakePresets.json      # debug / release / ci / headless
 ```
 
-## Design notes
+## Design notes (M1)
 
 - **No exceptions** for engine control flow — fallible APIs return `Result<T>`.
 - **No graphics API in `aegis_core`** — it is usable for tools/tests without Vulkan.
@@ -92,15 +98,38 @@ or graceful early exit when a Vulkan driver is absent) with exit code 0.
 - Validation layers are enabled automatically when `VK_LAYER_KHRONOS_validation` is
   installed (recommended on development machines; absent in minimal containers).
 
+## Design notes (M2)
+
+- **Best-fit free list** (`FreeListAllocator`) — pure C++, no Vulkan types, so splitting /
+  coalescing / alignment / best-fit selection are unit-tested without a driver
+  (see `tests/test_free_list.cpp`; randomized overlap checks over hundreds of interleaved
+  alloc/free steps).
+- **One device-local arena** (`BufferArena`) — a single large `DEVICE_LOCAL` VkBuffer with
+  `VERTEX | INDEX | STORAGE | TRANSFER_SRC | TRANSFER_DST` usage, sub-allocated for vertex &
+  index data. `BufferAllocation` handles are move-only RAII and return their segment to the
+  free list on destruction. The arena asserts against outliving its allocations.
+- **`staging ring`** (`StagingRing`) — one persistently mapped, host-visible (coherent when
+  available) VkBuffer with bump allocation + wrap-around. `reset()` marks the whole ring
+  reusable; callers must only call it once the GPU consumed prior uploads (blocking API makes
+  that trivial right now).
+- **TransferQueue** — prefers a dedicated TRANSFER-only queue family (created at device build
+  time, CONCURRENT-sharded arena/ring buffers avoid ownership-transfer barriers); falls back
+  silently to the graphics queue on GPUs without one (e.g. Intel iGPUs). All operations are
+  blocking (fence wait) — load-time semantics; async submission comes with the frame system.
+- **CONCURRENT sharing mode** between graphics and transfer families for the arena and the
+  staging ring — removes all cross-family ownership barriers for load-time traffic.
+
 ## Verification
 
 This repository's CI environment has **no Vulkan driver and no GPU**. What that means:
 
 - Everything compiles warning-free on `debug`, `ci` (`-Werror`) and `headless` presets.
-- All Vulkan-free logic (Result, logging, fixed-width types, vk_common helpers, …)
+- All Vulkan-free logic (free-list allocator, Result, logging, fixed-width types, …)
   is unit-tested and passes via `ctest`.
-- Driver-dependent paths (instance/device creation, swapchain) cannot execute without
-  a driver; `aegis_demo` exits early with a clear message in that case.
+- Driver-dependent paths cannot execute without a driver. `aegis_roundtrip` performs the
+  full upload → arena → readback → byte-compare verification on any machine with a
+  Vulkan 1.3 driver and prints `ROUNDTRIP VERIFIED` on success — it is registered as the
+  `aegis_roundtrip` ctest case (skips cleanly, exit 0, when no driver exists).
 
 On your machine: `cmake --preset=debug && cmake --build --preset=debug && ctest --preset=debug --output-on-failure`.
 

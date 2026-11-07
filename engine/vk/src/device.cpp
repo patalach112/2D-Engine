@@ -20,13 +20,17 @@ Device::Device(Device&& other) noexcept
     : device_(other.device_),
       graphics_queue_(other.graphics_queue_),
       present_queue_(other.present_queue_),
+      transfer_queue_(other.transfer_queue_),
       graphics_family_(other.graphics_family_),
-      present_family_(other.present_family_) {
+      present_family_(other.present_family_),
+      transfer_family_(other.transfer_family_) {
     other.device_ = VK_NULL_HANDLE;
     other.graphics_queue_ = VK_NULL_HANDLE;
     other.present_queue_ = VK_NULL_HANDLE;
+    other.transfer_queue_ = VK_NULL_HANDLE;
     other.graphics_family_ = kInvalidQueueFamily;
     other.present_family_ = kInvalidQueueFamily;
+    other.transfer_family_ = kInvalidQueueFamily;
 }
 
 Device& Device::operator=(Device&& other) noexcept {
@@ -35,13 +39,17 @@ Device& Device::operator=(Device&& other) noexcept {
         device_ = other.device_;
         graphics_queue_ = other.graphics_queue_;
         present_queue_ = other.present_queue_;
+        transfer_queue_ = other.transfer_queue_;
         graphics_family_ = other.graphics_family_;
         present_family_ = other.present_family_;
+        transfer_family_ = other.transfer_family_;
         other.device_ = VK_NULL_HANDLE;
         other.graphics_queue_ = VK_NULL_HANDLE;
         other.present_queue_ = VK_NULL_HANDLE;
+        other.transfer_queue_ = VK_NULL_HANDLE;
         other.graphics_family_ = kInvalidQueueFamily;
         other.present_family_ = kInvalidQueueFamily;
+        other.transfer_family_ = kInvalidQueueFamily;
     }
     return *this;
 }
@@ -59,9 +67,15 @@ core::Result<Device> Device::create(const PhysicalDeviceInfo& gpu, const DeviceC
     const core::u32 graphics = gpu.queues.graphics;
     const core::u32 present = gpu.queues.present != kInvalidQueueFamily ? gpu.queues.present : graphics;
 
-    const float priority = kQueuePriority;
-    const std::set<core::u32> family_set{graphics, present};
+    const bool create_transfer_queue =
+        config.use_dedicated_transfer_queue && gpu.queues.dedicated_transfer != kInvalidQueueFamily;
 
+    std::set<core::u32> family_set{graphics, present};
+    if (create_transfer_queue) {
+        family_set.insert(gpu.queues.dedicated_transfer);
+    }
+
+    const float priority = kQueuePriority;
     std::vector<VkDeviceQueueCreateInfo> queue_infos;
     queue_infos.reserve(family_set.size());
     for (const core::u32 family : family_set) {
@@ -114,10 +128,20 @@ core::Result<Device> Device::create(const PhysicalDeviceInfo& gpu, const DeviceC
     if (present != graphics) {
         vkGetDeviceQueue(device.device_, present, 0, &device.present_queue_);
     }
+    if (create_transfer_queue) {
+        vkGetDeviceQueue(device.device_, gpu.queues.dedicated_transfer, 0, &device.transfer_queue_);
+        device.transfer_family_ = gpu.queues.dedicated_transfer;
+    } else if (config.use_dedicated_transfer_queue) {
+        AEGIS_LOG_INFO("[aegis] no dedicated transfer-only queue family on this GPU; "
+                       "uploads will use the graphics queue");
+    }
 
     AEGIS_LOG_INFO("[aegis] logical device created ("
                    << extensions.size() << " device extension(s), " << queue_infos.size()
-                   << " queue(s))");
+                   << " queue(s)" << (device.transfer_queue_ != VK_NULL_HANDLE
+                                          ? ", dedicated transfer queue"
+                                          : "")
+                   << ")");
     return core::Result<Device>::ok(std::move(device));
 }
 
@@ -134,8 +158,10 @@ void Device::reset() noexcept {
     device_ = VK_NULL_HANDLE;
     graphics_queue_ = VK_NULL_HANDLE;
     present_queue_ = VK_NULL_HANDLE;
+    transfer_queue_ = VK_NULL_HANDLE;
     graphics_family_ = kInvalidQueueFamily;
     present_family_ = kInvalidQueueFamily;
+    transfer_family_ = kInvalidQueueFamily;
 }
 
 } // namespace aegis::vk

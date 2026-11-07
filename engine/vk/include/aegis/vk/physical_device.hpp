@@ -15,6 +15,7 @@ inline constexpr core::u32 kInvalidQueueFamily = ~core::u32{0};
 struct QueueFamilySelection {
     core::u32 graphics = kInvalidQueueFamily;
     core::u32 present = kInvalidQueueFamily;            ///< == graphics for headless usage or unified families
+    core::u32 dedicated_transfer = kInvalidQueueFamily; ///< TRANSFER-only family, if the GPU exposes one
 };
 
 struct PhysicalDeviceInfo {

@@ -40,9 +40,11 @@ endif()
 
 add_subdirectory(engine/core)        # aegis_core       — no Vulkan, no windowing
 add_subdirectory(engine/vk)          # aegis_vk         — Vulkan bootstrap
+add_subdirectory(engine/memory)      # aegis_memory     — allocators + transfer queue (Milestone 2)
 
 if(AEGIS_BUILD_DEMO)
     add_subdirectory(apps/aegis_demo)
+    add_subdirectory(apps/aegis_roundtrip)
 endif()
 
 if(AEGIS_BUILD_TESTS)

@@ -15,7 +15,8 @@ using core::i64;
 
 namespace {
 
-i64 score_device(const VkPhysicalDeviceProperties& properties, u64 local_bytes, bool unified_queue) {
+i64 score_device(const VkPhysicalDeviceProperties& properties, u64 local_bytes, bool unified_queue,
+                 bool has_dedicated_transfer) {
     i64 score = 0;
     switch (properties.deviceType) {
         case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   score += 1000; break;
@@ -29,6 +30,9 @@ i64 score_device(const VkPhysicalDeviceProperties& properties, u64 local_bytes, 
     score += static_cast<i64>(std::min<u64>(local_bytes / kGiB, 40)) * 100;
     if (unified_queue) {
         score += 50;
+    }
+    if (has_dedicated_transfer) {
+        score += 100;  // enables async DMA uploads alongside rendering
     }
     return score;
 }
@@ -108,11 +112,18 @@ core::Result<PhysicalDeviceInfo> select_physical_device(const VkInstance instanc
 
         u32 graphics = kInvalidQueueFamily;
         u32 present = kInvalidQueueFamily;
+        u32 dedicated_transfer = kInvalidQueueFamily;
 
         for (u32 i = 0; i < queue_count; ++i) {
             const VkQueueFlags flags = families[i].queueFlags;
             if (graphics == kInvalidQueueFamily && (flags & VK_QUEUE_GRAPHICS_BIT) != 0) {
                 graphics = i;
+            }
+            // A dedicated transfer family is one that supports TRANSFER but not
+            // GRAPHICS or COMPUTE — ideal for DMA uploads overlapping rendering.
+            if (dedicated_transfer == kInvalidQueueFamily && (flags & VK_QUEUE_TRANSFER_BIT) != 0 &&
+                (flags & VK_QUEUE_GRAPHICS_BIT) == 0 && (flags & VK_QUEUE_COMPUTE_BIT) == 0) {
+                dedicated_transfer = i;
             }
             if (needs_present) {
                 VkBool32 supported = VK_FALSE;
@@ -147,7 +158,8 @@ core::Result<PhysicalDeviceInfo> select_physical_device(const VkInstance instanc
         }
 
         const bool unified = (present == graphics);
-        const i64 score = score_device(properties, local_bytes, unified);
+        const i64 score = score_device(properties, local_bytes, unified,
+                                       dedicated_transfer != kInvalidQueueFamily);
 
         if (!found || score > best.score) {
             found = true;
@@ -158,6 +170,7 @@ core::Result<PhysicalDeviceInfo> select_physical_device(const VkInstance instanc
             best.memory_properties = memory;
             best.queues.graphics = graphics;
             best.queues.present = present;
+            best.queues.dedicated_transfer = dedicated_transfer;
             best.device_local_bytes = local_bytes;
             best.score = score;
         }
@@ -174,6 +187,10 @@ core::Result<PhysicalDeviceInfo> select_physical_device(const VkInstance instanc
     AEGIS_LOG_INFO("[aegis] selected GPU '" << best.properties.deviceName
                    << "' (score=" << best.score << ", graphics queue family "
                    << best.queues.graphics << ", present family " << best.queues.present
+                   << ", dedicated transfer family "
+                   << (best.queues.dedicated_transfer != kInvalidQueueFamily
+                           ? std::to_string(best.queues.dedicated_transfer)
+                           : std::string("none"))
                    << ")");
     return core::Result<PhysicalDeviceInfo>::ok(std::move(best));
 }
