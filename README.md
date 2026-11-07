@@ -111,6 +111,19 @@ instance extensions and failed at `glfwCreateWindowSurface` with
 `aegis_rocket_dump` needs no window at all — offscreen rendering works on any headless
 machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 
+### Runtime diagnostics
+
+- Validation layers are **off by default** in `aegis_game`. Set `AEGIS_VK_VALIDATION=1`
+  to enable `VK_LAYER_KHRONOS_validation`. If bring-up fails with validation enabled,
+  the game logs the error and **retries once without them** — a layer/SDK version
+  mismatch on older GPUs (e.g. GTX 970) is a known source of
+  `VK_ERROR_INITIALIZATION_FAILED` from `glfwCreateWindowSurface`.
+- The selected GPU's vendor/driver/device version is logged at startup — include it in
+  bug reports together with the `[aegis] enabling instance extension:` lines.
+- On Windows the process is marked DPI-aware before `glfwInit` (GLFW 3.4 init hint
+  when available, else `SetProcessDPIAware`), so the swapchain, mouse coordinates and
+  UI hit-testing agree on scaled displays.
+
 ## Milestones
 
 | # | Milestone | Status |
