@@ -87,6 +87,10 @@ add_subdirectory(engine/render)       # aegis_render     — parts/planet/UI bri
 add_subdirectory(engine/renderer2d)  # aegis_renderer2d — instanced 2D batch renderer (Milestone 3+4)
 add_subdirectory(engine/offscreen)   # aegis_offscreen  — offscreen rendering + PNG writer (Milestone 5)
 
+# aegis_game (session + scenes) is always built: the tools and test
+# suite link it for headless verification, not just the windowed app.
+add_subdirectory(apps/aegis_game)
+
 if(AEGIS_BUILD_DEMO)
     add_subdirectory(apps/aegis_demo)
     add_subdirectory(apps/aegis_roundtrip)

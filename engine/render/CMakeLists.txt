@@ -3,6 +3,7 @@
 # (procedural parts, planet/atmosphere, HUD draw list). Adds no simulation
 # state of its own — deterministic for identical inputs.
 add_library(aegis_render STATIC
+    src/camera_rig.cpp
     src/part_renderer.cpp
     src/planet_renderer.cpp
     src/ui_bridge.cpp)

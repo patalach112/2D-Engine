@@ -80,13 +80,7 @@ const NodeDef* find_node(const PartTemplate& tmpl, const NodeId id) noexcept {
 }
 
 bool node_types_compatible(const NodeType a, const NodeType b) noexcept {
-    if (a == NodeType::Surface || b == NodeType::Surface) {
-        return true;
-    }
-    if ((a == NodeType::Top && b == NodeType::Bottom) || (a == NodeType::Bottom && b == NodeType::Top)) {
-        return true;
-    }
-    return a == NodeType::Lateral && b == NodeType::Lateral;
+    return nodes_compatible(a, b);
 }
 
 constexpr f32 kNodeEps = 1e-3f;
@@ -709,6 +703,59 @@ void VehicleAssembly::clear() noexcept {
     alive_count_ = 0;
     mass_cache_ = MassProperties{};
     mass_dirty_ = true;
+}
+
+namespace {
+
+const NodeDef* first_node_of_type(const PartTemplate& tmpl, const NodeType type) noexcept {
+    for (const NodeDef& node : tmpl.nodes) {
+        if (node.type == type) {
+            return &node;
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+VehicleAssembly make_demo_rocket() noexcept {
+    VehicleAssembly assembly;
+    // All-1-wide stack: snap() requires integer grid alignment, which mixed
+    // parity (1-wide on a 2-wide core) cannot satisfy — 1-wide nodes land on
+    // half-cell offsets. Sparrow / Long-2 / decoupler / Sparrow / Short-1 / pod
+    // keeps the whole chain on the integer grid.
+    const TemplateId liftoff = 4, long2 = 1, decoupler = 7, upper = 4, short1 = 3, pod = 0;
+    const core::Result<PartIndex> root = assembly.add_root(liftoff, 0, 0, 0);
+    if (!root.has_value()) {
+        return assembly;  // cannot fail today, but stay total
+    }
+    const PartIndex engine = root.value();
+
+    auto stack = [&assembly](const PartIndex parent, const TemplateId child) -> core::Result<PartIndex> {
+        const PartTemplate* parent_tmpl = assembly.template_of(parent);
+        const PartTemplate* child_tmpl = find_template(child);
+        if (parent_tmpl == nullptr || child_tmpl == nullptr) {
+            return core::Result<PartIndex>::failure(core::ErrorCode::InvalidArgument, "unknown template");
+        }
+        const NodeDef* p_top = first_node_of_type(*parent_tmpl, NodeType::Top);
+        const NodeDef* c_bottom = first_node_of_type(*child_tmpl, NodeType::Bottom);
+        if (p_top == nullptr || c_bottom == nullptr) {
+            return core::Result<PartIndex>::failure(core::ErrorCode::InvalidArgument, "missing stack node");
+        }
+        return assembly.snap(parent, p_top->id, child, c_bottom->id, 0);
+    };
+
+    const core::Result<PartIndex> tank = stack(engine, long2);
+    if (!tank.has_value()) return assembly;
+    const core::Result<PartIndex> ring = stack(tank.value(), decoupler);
+    if (!ring.has_value()) return assembly;
+    const core::Result<PartIndex> second = stack(ring.value(), upper);
+    if (!second.has_value()) return assembly;
+    const core::Result<PartIndex> upper_tank = stack(second.value(), short1);
+    if (!upper_tank.has_value()) return assembly;
+    const core::Result<PartIndex> pod_index = stack(upper_tank.value(), pod);
+    if (!pod_index.has_value()) return assembly;
+    return assembly;
 }
 
 }  // namespace aegis::parts

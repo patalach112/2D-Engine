@@ -17,6 +17,18 @@
 
 namespace aegis::parts {
 
+/// Node-type compatibility rule for snap() (top<->bottom, lateral<->lateral,
+/// any Surface<->any node type). Public so build tooling (VAB) can mirror it.
+[[nodiscard]] inline bool nodes_compatible(const NodeType a, const NodeType b) noexcept {
+    if (a == NodeType::Surface || b == NodeType::Surface) {
+        return true;
+    }
+    if ((a == NodeType::Top && b == NodeType::Bottom) || (a == NodeType::Bottom && b == NodeType::Top)) {
+        return true;
+    }
+    return a == NodeType::Lateral && b == NodeType::Lateral;
+}
+
 using core::f32;
 using core::f64;
 using core::i16;
@@ -163,5 +175,12 @@ private:
     mutable MassProperties mass_cache_{};
     mutable bool mass_dirty_ = true;
 };
+
+
+/// Build the built-in demonstration rocket (bottom -> top):
+///   Sparrow engine / Long-2 tank / MK-1 decoupler / Sparrow engine /
+///   Short-1 tank / Aegis MK-I pod. Staging is NOT assigned — call auto_assign().
+/// Deterministic; the VAB loads this on first open.
+[[nodiscard]] VehicleAssembly make_demo_rocket() noexcept;
 
 }  // namespace aegis::parts

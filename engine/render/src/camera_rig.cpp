@@ -6,16 +6,16 @@
 
 namespace aegis::render {
 
-CameraRig::CameraRig() noexcept : camera_({}) {
-    aegis::renderer2d::Camera2DConfig config{};
-    config.initial_zoom = target_zoom_;
-    // 1e-5 px/m frames a 1.27e7 m-wide planet at ~0.13 px/m; 400 px/m resolves
-    // centimetre-scale SRB nozzles. The viewport is set via camera().set_viewport.
-    config.min_zoom = 1.0e-5f;
-    config.max_zoom = 400.0f;
-    camera_ = aegis::renderer2d::Camera2D{config};
-    camera_.set_zoom(target_zoom_);
-}
+CameraRig::CameraRig() noexcept
+    : camera_([] {
+          aegis::renderer2d::Camera2DConfig config{};
+          // 1e-5 px/m frames a 1.27e7 m-wide planet at planetary scale; 400 px/m
+          // resolves centimetre-scale nozzle bells at the pad.
+          config.initial_zoom = 40.0f;
+          config.min_zoom = 1.0e-5f;
+          config.max_zoom = 400.0f;
+          return config;
+      }()) {}
 
 void CameraRig::set_target(core::f64 world_x, core::f64 world_y) noexcept {
     target_x_ = world_x;
