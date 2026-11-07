@@ -4,12 +4,12 @@ Lightweight, ultra-high-performance 2D game engine for **space flight simulation
 C++20, Vulkan 1.3, clean console-style architecture (low-level core + modular renderer,
 batch rendering, offscreen PNG verification).
 
-> **Status: Milestone 6 — Fortran Math Bridge & Kepler Solver** ✅ (builds clean, unit tests green)
+> **Status: Milestone 7 — Part System & Vehicle Assembly** ✅ (builds clean, unit tests green)
 >
-> Phase-1 core exists (M1–M5 compile-verified; windowed Vulkan runs need a Vulkan 1.3 driver).
-> Milestone 6 adds the Fortran kernel bridge: the Kepler/orbit math runs as Fortran modules
-> behind a C ABI when `gfortran` is present, with a numerically identical C++ fallback otherwise
-> (A/B equivalence unit tests). The Vulkan runtime paths are driver-verified on your machine —
+> Phase-1 core exists (M1–M6 compile-verified; windowed Vulkan runs need a Vulkan 1.3 driver).
+> Milestone 7 adds the SFS-style part system: grid-based assembly with node snapping, staging
+> with sequential activation and decoupler splits, and aggregate mass/CoM/Izz — all headless,
+> data-oriented and unit-tested. The Vulkan runtime paths are driver-verified on your machine —
 > see "Verification" below.
 
 ## Requirements
@@ -53,6 +53,9 @@ ctest --preset=debug
 # Milestone 5: render the deterministic rocket scene offscreen and write a PNG
 ./build/debug/tools/aegis_rocket_dump/aegis_rocket_dump                  # writes rocket_frame.png
 ./build/debug/tools/aegis_rocket_dump/aegis_rocket_dump shot.png         # custom output path
+
+# Milestone 7: build the three-stage booster rocket, stage it end to end, verify everything
+./build/debug/tools/aegis_assembly_check/aegis_assembly_check            # "ROCKET/ASSEMBLY_VERIFIED"
 ```
 
 `aegis_orbit_demo` controls: **scroll** = cursor-anchored zoom · **WASD/arrows** = pan ·
@@ -80,7 +83,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 | 3 | Universal 2D Batch Renderer (instanced rockets/particles/UI) | ✅ done |
 | 4 | Camera & Orbital Trajectory System (2D zoom camera, orbit/velocity lines) | ✅ done |
 | 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | ✅ done |
-| 6 | Fortran Math Bridge & Kepler Solver (Fortran kernels behind a C ABI; C++ fallback) | ✅ done (this milestone) |
+| 6 | Fortran Math Bridge & Kepler Solver (Fortran kernels behind a C ABI; C++ fallback) | ✅ done |
+| 7 | Part System & Vehicle Assembly (grid snap, staging, mass CoM) | ✅ done (this milestone) |
 
 ## Repository layout
 
@@ -88,6 +92,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 ├── cmake/                 # AegisDeps.cmake (pinned FetchContent), warning flags
 ├── engine/
 │   ├── core/              # aegis_core       — fixed-width types, Result<T>, logging, asserts (no Vulkan)
+│   ├── parts/             # aegis_parts      — part templates registry, grid-based vehicle assembly,
+│   │                      #                staging, decoupler splits, mass/CoM/Izz (Vulkan-free; M7)
 │   ├── orbit/             # aegis_orbit      — Keplerian orbital mechanics (two-body, Vulkan-free;
 │                          #                Fortran kernels via iso_c_binding when gfortran is found,
 │                          #                C++ fallback otherwise) + orbit_c.h C ABI + internal.hpp
@@ -108,7 +114,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 │   └── aegis_orbit_demo/  # Milestone 4 demo: sun/planet solar system; scroll-zoom camera, orbit path,
 │                          #                velocity vector, pixel-anchored HUD
 ├── tools/
-│   └── aegis_rocket_dump/ # Milestone 5 tool: deterministic rocket scene → rocket_frame.png (ctest)
+│   ├── aegis_rocket_dump/ # Milestone 5 tool: deterministic rocket scene → rocket_frame.png (ctest)
+│   └── aegis_assembly_check/ # Milestone 7 tool: three-stage rocket build/stage/verify (ctest)
 ├── tests/                 # zero-dependency unit test harness (aegis_test.hpp)
 ├── shaders/               # quad.vert|frag (sprites/particles/UI), line.vert|frag — GLSL → SPIR-V
 └── CMakePresets.json      # debug / release / ci / headless
@@ -237,6 +244,54 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
   Fortran toolchain (headless CI included) while the Fortran backend is the reference on real
   development machines — the A/B tests keep both honest.
 
+## Design notes (M7)
+
+- **Grid, not free placement**: every part template has an integer-cell footprint
+  (`w`×`h`), rotations are 90° CCW steps plus a flip bit (SFS stock behaviour; the engine
+  encodes both in one byte — low nibble steps 0..3, bit 4 flip applied before rotation), and
+  placements are solved in f32 cell units with grid-alignment enforcement at snap time.
+  `1 cell == 1 wu` (`aegis::parts::kCellWu`), keeping M8's physics in clean units.
+- **POD parts, no per-instance overhead**: a placed part is a 16-byte POD (`template id`,
+  grid position, rotation, fuel type, current propellant). Templates are static, shared
+  `PartTemplate` definitions (13 built-ins, constexpr tables, original generic designations —
+  no third-party game names or trade dress). Part indices are stable forever: splitting
+  preserves original slots and leaves tombstones, so staging assignments and M8 flight
+  references never dangle.
+- **Node snapping**: attach points (`top`/`bottom`/`lateral`/`surface`) are declared per
+  template in the unrotated frame; snapping solves the placement analytically (transformed
+  node → child origin → grid quantise), requires opposed normals for structural pairs,
+  rejects off-grid positions, and validates footprint occupancy against a cell→part hash
+  map before committing. Nothing is placed that intersects an existing part.
+- **Adjacency is derived, never stored**: `adjacency()` recomputes the edge set on demand
+  (node-coincidence scan, O(nodes·log)) — no link bookkeeping to corrupt, nothing to keep
+  consistent when parts come and go.
+- **Removal = orphan cut**: `remove(part)` tombstones the target and every part left
+  unattached to a command pod — SFS "delete and anything not still connected falls away".
+- **Staging list**: ordered per-part actions (IgniteEngine / FireDecoupler /
+  JettisonFairing) with `assign()`, an `auto_assign()` stack-depth heuristic (engines at
+  depth 2·k, decouplers at 2·k+1; the bottom engine group is liftoff), deterministic firing
+  order inside a stage (decouplers → fairings → ignitions, stable by part index), and
+  sequential activation via `activate_next_stage()`. The next `n` stages fire in order;
+  decouplers split the vehicle by cutting all incident adjacency edges — the pod-bearing
+  component is adopted back into the assembly, detached pieces are returned to the caller.
+  Decoupler carcasses stay attached (lower side), matching SFS conventions.
+- **Mass properties without a DOM**: `mass_properties()` aggregates dry/propellant mass,
+  CoM and a scalar 2D `Izz` (point-mass approximation) in O(n) — M8 gets inertia for free,
+  M9 gets stack-rendering hints for free.
+- **Symmetry is core API, not UI**: `mirror_snap()` re-places a part mirrored across a
+  vertical/horizontal world axis (mirror rules `R(4−s)`, `R(2+4−s)` with the flip bit
+  toggled), scanning the parent's nodes for the counterpart — x2/x4 booster symmetry is
+  engine functionality ready for M9's builder UI.
+- **`aegis_assembly_check`** (registered with ctest, always runs — no driver needed): builds
+  a deterministic three-stage rocket with two radial boosters via the symmetry helper,
+  stages it end to end, and asserts the whole pipeline (snap/mirror/split/CoM/staging/
+  exhaustion) — 43 checks, prints `ROCKET/ASSEMBLY_VERIFIED`.
+- **Name discipline**: templates reference only Aegis2D-original generic designations
+  (Aegis MK-I Pod, Long-2 Tank, Sparrow/Kestrel/Longbow engines, MK-1 Decoupler, Radial
+  Separator, Nose Fairing…) — no names from any existing game.
+- **Deliberately out of scope for M7**: physics/dynamics (M8), propellant consumption (stored
+  and aggregated only), rendering/UI + JSON data packs (M9), Δv estimation helpers.
+
 ## Design notes (M5)
 
 - **`aegis_offscreen`**: a surface-free Vulkan path for headless frame capture. One private
@@ -266,11 +321,12 @@ This repository's CI environment has **no Vulkan driver and no GPU**. What that 
 
 - Everything compiles warning-free on `debug`, `ci` (`-Werror`) and `headless` presets.
 - All Vulkan-free logic (allocator, Result, logging, projection, camera, orbital mechanics,
-  PNG round trip, …) is unit-tested — 47/47 tests pass (2,037 checks) with the C++ Fortran
-  fallback path active (this container has no gfortran); with Fortran enabled the suite
-  gains the three A/B equivalence groups (49 tests total).
-- `ctest` runs 3 cases: `aegis_tests`, `aegis_roundtrip` and `aegis_rocket_dump` —
-  both driver-dependent tools **skip cleanly (exit 0)** without a driver.
+  PNG round trip, parts/staging, …) is unit-tested — 96/96 tests pass (2,365 checks) with the
+  C++ Fortran fallback path active (this container has no gfortran); with Fortran enabled the
+  suite gains the three A/B equivalence groups (98 tests total).
+- `ctest` runs 4 cases: `aegis_tests`, `aegis_roundtrip`, `aegis_rocket_dump` and
+  `aegis_assembly_check` — the two driver-dependent tools **skip cleanly (exit 0)** without a
+  driver; `aegis_assembly_check` is driver-free and always runs.
 - Fortran kernel path: the container has no gfortran, so the .f90 itself is line-audited
   (132-col/literal-kind/continuation checks) rather than compiled. The ABI is machine-checked:
   `orbit_c.h` parses as C99 (-Wall -Wextra -Werror) and as C++; the `#ifdef AEGIS_HAVE_FORTRAN`

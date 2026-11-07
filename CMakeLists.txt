@@ -80,6 +80,7 @@ add_subdirectory(engine/core)        # aegis_core       — no Vulkan, no window
 add_subdirectory(engine/vk)          # aegis_vk         — Vulkan bootstrap (Milestone 1)
 add_subdirectory(engine/memory)      # aegis_memory     — allocators + transfer queue (Milestone 2)
 add_subdirectory(engine/orbit)       # aegis_orbit      — Keplerian orbital mechanics (Milestone 4)
+add_subdirectory(engine/parts)       # aegis_parts      — part system + staging (Milestone 7)
 add_subdirectory(engine/renderer2d)  # aegis_renderer2d — instanced 2D batch renderer (Milestone 3+4)
 add_subdirectory(engine/offscreen)   # aegis_offscreen  — offscreen rendering + PNG writer (Milestone 5)
 
@@ -92,6 +93,7 @@ endif()
 
 if(AEGIS_BUILD_TOOLS)
     add_subdirectory(tools/aegis_rocket_dump)
+    add_subdirectory(tools/aegis_assembly_check)
 endif()
 
 if(AEGIS_BUILD_TESTS)
