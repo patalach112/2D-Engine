@@ -162,7 +162,7 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 - **Dynamic rendering only** (no render passes) with dynamic viewport/scissor; no depth
   attachment; culling disabled. Projection is a column-major mat4 (`make_orthographic`)
   pushed via a 64-byte vertex push constant — the renderer never sees a camera (that's M4).
-- **Shaders compile at build time**: glslang is fetched pinned (14.3.0) via FetchContent and
+- **Shaders compile at build time**: glslang is fetched pinned (15.0.0) via FetchContent and
   only its `glslang-standalone` binary is used (`--target-env vulkan1.3`); the engine links
   nothing from it. Missing/broken shader compilation fails the build, never the runtime.
 - **Stats**: per-frame and lifetime `draw_calls` / `instance_count` with a per-kind

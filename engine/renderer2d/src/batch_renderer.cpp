@@ -240,6 +240,16 @@ void BatchRenderer::flush() {
         vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_[kind_index]);
         vkCmdPushConstants(cmd_, layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(projection_),
                            projection_.data());
+
+        // Binding 0 carries the persistently mapped instance buffer. Bind it for every
+        // batch (not just once per frame) so the draw is always preceded by a bind of the
+        // buffer its pipeline's binding 0 descriptor targets. The binding offset stays 0
+        // and the per-batch instance offset travels in vkCmdDraw's firstInstance — binding
+        // a 40-byte-stride offset would not be guaranteed to satisfy
+        // minVertexInputBindingOffsetAlignment on all devices.
+        const VkBuffer instance_buffer = instance_buffers_[frame_index_].handle();
+        constexpr VkDeviceSize binding_offset = 0;
+        vkCmdBindVertexBuffers(cmd_, 0, 1, &instance_buffer, &binding_offset);
         vkCmdDraw(cmd_, 6, batch.instance_count, 0, batch.first_instance);
 
         ++draw_calls;
