@@ -7,6 +7,10 @@ set(QUAD_VERT_SPV "${SPV_DIR}/quad.vert.spv")
 set(QUAD_FRAG_SPV "${SPV_DIR}/quad.frag.spv")
 set(LINE_VERT_SPV "${SPV_DIR}/line.vert.spv")
 set(LINE_FRAG_SPV "${SPV_DIR}/line.frag.spv")
+set(PART_VERT_SPV "${SPV_DIR}/part.vert.spv")
+set(PART_FRAG_SPV "${SPV_DIR}/part.frag.spv")
+set(GLYPH_VERT_SPV "${SPV_DIR}/glyph.vert.spv")
+set(GLYPH_FRAG_SPV "${SPV_DIR}/glyph.frag.spv")
 
 add_custom_command(
     OUTPUT "${QUAD_VERT_SPV}"
@@ -44,7 +48,25 @@ add_custom_command(
     COMMENT "GLSL -> SPIR-V: shaders/line.frag"
     VERBATIM)
 
-add_custom_target(aegis_renderer2d_shaders ALL DEPENDS "${QUAD_VERT_SPV}" "${QUAD_FRAG_SPV}" "${LINE_VERT_SPV}" "${LINE_FRAG_SPV}")
+foreach(_shader
+        "part.vert:PART_VERT_SPV"
+        "part.frag:PART_FRAG_SPV"
+        "glyph.vert:GLYPH_VERT_SPV"
+        "glyph.frag:GLYPH_FRAG_SPV")
+    string(REPLACE ":" ";" _parts "${_shader}")
+    list(GET _parts 0 _src)
+    list(GET _parts 1 _var)
+    add_custom_command(
+        OUTPUT "${${_var}}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SPV_DIR}"
+        COMMAND $<TARGET_FILE:glslang-standalone> -V --target-env vulkan1.3
+                "${PROJECT_SOURCE_DIR}/shaders/${_src}" -o "${${_var}}"
+        DEPENDS "${PROJECT_SOURCE_DIR}/shaders/${_src}" glslang-standalone
+        COMMENT "GLSL -> SPIR-V: shaders/${_src}"
+        VERBATIM)
+endforeach()
+
+add_custom_target(aegis_renderer2d_shaders ALL DEPENDS "${QUAD_VERT_SPV}" "${QUAD_FRAG_SPV}" "${LINE_VERT_SPV}" "${LINE_FRAG_SPV}" "${PART_VERT_SPV}" "${PART_FRAG_SPV}" "${GLYPH_VERT_SPV}" "${GLYPH_FRAG_SPV}")
 
 add_library(aegis_renderer2d STATIC
     src/projection.cpp

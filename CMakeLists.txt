@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(Aegis2D
-        VERSION 0.1.0
+        VERSION 0.2.0
         DESCRIPTION "Lightweight, ultra-high-performance 2D engine for space flight simulation (C++20 / Vulkan 1.3)"
         LANGUAGES C CXX)
 
@@ -27,6 +27,43 @@ option(AEGIS_BUILD_TESTS  "Build the unit test suite"                           
 option(AEGIS_WERROR       "Treat compiler warnings as errors (first-party code)"       OFF)
 option(AEGIS_BUILD_TOOLS  "Build the tools/ command-line utilities (rocket PNG dump)"   ON)
 
+# ---------------------------------------------------------------------------
+# Fortran kernel auto-detection (Milestone 6)
+# AEGIS_ENABLE_FORTRAN=AUTO (default): use the Fortran orbit kernels when a
+# compiler is found, otherwise build the numerically identical C++ fallback.
+#               =ON : hard requirement (for CI); configure fails if missing.
+#               =OFF: always use the C++ fallback kernels.
+# ---------------------------------------------------------------------------
+set(AEGIS_ENABLE_FORTRAN "AUTO" CACHE STRING "Fortran orbit kernels: AUTO (default), ON (require) or OFF (C++ fallback)")
+set_property(CACHE AEGIS_ENABLE_FORTRAN PROPERTY STRINGS AUTO ON OFF)
+option(AEGIS_FORTRAN_NATIVE "Optimize Fortran kernels for the build host (-march=native; off for cross-machine determinism)" OFF)
+
+set(AEGIS_FORTRAN_FOUND OFF)
+if(NOT AEGIS_ENABLE_FORTRAN STREQUAL "OFF")
+    include(CheckLanguage)
+    # CheckLanguage caches CMAKE_Fortran_COMPILER (path on success, NOTFOUND on
+    # failure) and skips the probe entirely when the variable is already cached.
+    # Drop only the NOTFOUND sentinel so a machine that later gains gfortran is
+    # re-probed; explicit compiler paths from the user are preserved.
+    if(CMAKE_Fortran_COMPILER MATCHES "NOTFOUND")
+        unset(CMAKE_Fortran_COMPILER CACHE)
+    endif()
+    check_language(Fortran)
+    if(CMAKE_Fortran_COMPILER)  # path when enabled, NOTFOUND otherwise (per CheckLanguage docs)
+        enable_language(Fortran)
+        set(AEGIS_FORTRAN_FOUND ON)
+    elseif(AEGIS_ENABLE_FORTRAN STREQUAL "ON")
+        message(FATAL_ERROR
+            "AEGIS_ENABLE_FORTRAN=ON but no Fortran compiler was found. "
+            "Install gfortran (MSYS2/MinGW64: pacman -S mingw-w64-x86_64-gcc-fortran) "
+            "or use AEGIS_ENABLE_FORTRAN=AUTO/OFF.")
+    else()
+        message(STATUS "Aegis2D: no Fortran compiler found — the C++ orbit kernels will be used")
+    endif()
+else()
+    message(STATUS "Aegis2D: AEGIS_ENABLE_FORTRAN=OFF — the C++ orbit kernels will be used")
+endif()
+
 include(FetchContent)
 include(cmake/AegisDeps.cmake)
 include(cmake/AegisWarnings.cmake)
@@ -43,8 +80,17 @@ add_subdirectory(engine/core)        # aegis_core       — no Vulkan, no window
 add_subdirectory(engine/vk)          # aegis_vk         — Vulkan bootstrap (Milestone 1)
 add_subdirectory(engine/memory)      # aegis_memory     — allocators + transfer queue (Milestone 2)
 add_subdirectory(engine/orbit)       # aegis_orbit      — Keplerian orbital mechanics (Milestone 4)
+add_subdirectory(engine/parts)       # aegis_parts      — part system + staging (Milestone 7)
+add_subdirectory(engine/serial)     # aegis_serial     — JSON subset + craft save/load (Milestone 10)
+add_subdirectory(engine/physics)     # aegis_physics    — flight dynamics & staging integration (Milestone 8)
+add_subdirectory(engine/ui)          # aegis_ui         — immediate-mode UI kernel + bitmap font (Milestone 9)
+add_subdirectory(engine/render)       # aegis_render     — parts/planet/UI bridges to renderer2d (Milestone 9)
 add_subdirectory(engine/renderer2d)  # aegis_renderer2d — instanced 2D batch renderer (Milestone 3+4)
 add_subdirectory(engine/offscreen)   # aegis_offscreen  — offscreen rendering + PNG writer (Milestone 5)
+
+# aegis_game (session + scenes) is always built: the tools and test
+# suite link it for headless verification, not just the windowed app.
+add_subdirectory(apps/aegis_game)
 
 if(AEGIS_BUILD_DEMO)
     add_subdirectory(apps/aegis_demo)
@@ -55,6 +101,10 @@ endif()
 
 if(AEGIS_BUILD_TOOLS)
     add_subdirectory(tools/aegis_rocket_dump)
+    add_subdirectory(tools/aegis_assembly_check)
+    add_subdirectory(tools/aegis_flight_check)
+    add_subdirectory(tools/aegis_game_check)
+    add_subdirectory(tools/aegis_craft_check)
 endif()
 
 if(AEGIS_BUILD_TESTS)
@@ -66,6 +116,7 @@ message(STATUS "Aegis2D ${PROJECT_VERSION} configured")
 message(STATUS "  C++ standard : C++20")
 message(STATUS "  Vulkan       : 1.3 headers (v1.3.295) via volk")
 message(STATUS "  Windowed     : ${AEGIS_WINDOWED}")
+message(STATUS "  Fortran      : ${AEGIS_ENABLE_FORTRAN} (found: ${AEGIS_FORTRAN_FOUND})")
 if(AEGIS_WINDOWED)
     message(STATUS "  GLFW         : X11=${GLFW_BUILD_X11} Wayland=${GLFW_BUILD_WAYLAND} NullPlatform=${AEGIS_GLFW_NULL_PLATFORM}")
 endif()

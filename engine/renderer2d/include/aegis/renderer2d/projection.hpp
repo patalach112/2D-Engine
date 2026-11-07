@@ -19,6 +19,9 @@ namespace aegis::renderer2d {
 /// Usage (column-major elements, m[col * 4 + row]):
 ///   const auto projection = aegis::renderer2d::make_orthographic(-half_w, half_w, -half_h, half_h);
 ///   renderer.begin_frame(cmd, frame_index, projection.data(), extent);
+/// Convention: Vulkan NDC (y-down). World +y maps to clip-space y = -1, so a
+/// right-handed y-up world renders with y up on screen. Callers using the old
+/// OpenGL-style matrix must negate their y expectations accordingly.
 [[nodiscard]] std::array<core::f32, 16> make_orthographic(core::f32 left,
                                                           core::f32 right,
                                                           core::f32 bottom,

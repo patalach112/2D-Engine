@@ -37,7 +37,7 @@ AEGIS_TEST(projection, "symmetric bounds map corners to clip space") {
 
     AEGIS_CHECK_EQ(m.size(), std::size_t{16});
     expect_near(m[0], 1.0f / 8.0f, 1e-6f, "m[0] scale x");
-    expect_near(m[5], 1.0f / 4.5f, 1e-6f, "m[5] scale y");
+    expect_near(m[5], -1.0f / 4.5f, 1e-6f, "m[5] scale y (Vulkan NDC y-down)");
     expect_near(m[10], 0.5f, 1e-6f, "m[10] scale z");   // 1 / (far - near) == 1/2
     expect_near(m[12], 0.0f, 1e-6f, "m[12] translate x (symmetric)");
     expect_near(m[13], 0.0f, 1e-6f, "m[13] translate y (symmetric)");
@@ -55,19 +55,19 @@ AEGIS_TEST(projection, "asymmetric bounds translate correctly") {
 
     expect_near(m[0], 2.0f / 8.0f, 1e-6f, "m[0] scale x");
     expect_near(m[12], -0.5f, 1e-6f, "m[12] translate x");   // -(right+left)/(right-left)
-    expect_near(m[5], 0.5f, 1e-6f, "m[5] scale y");
-    expect_near(m[13], -0.5f, 1e-6f, "m[13] translate y");   // -(top+bottom)/(top-bottom)
+    expect_near(m[5], -0.5f, 1e-6f, "m[5] scale y (Vulkan NDC y-down)");
+    expect_near(m[13], 0.5f, 1e-6f, "m[13] translate y");    // (top+bottom)/(top-bottom)
     expect_near(m[10], 0.1f, 1e-6f, "m[10] scale z");
     expect_near(m[14], 0.0f, 1e-6f, "m[14] translate z");
 
     const auto lo = mul43(m, -2.0f, -1.0f, 0.0f);
     expect_near(lo[0], -1.0f, 1e-5f, "left bound -> clip x = -1");
-    expect_near(lo[1], -1.0f, 1e-5f, "bottom bound -> clip y = -1");
+    expect_near(lo[1], 1.0f, 1e-5f, "bottom bound -> clip y = +1 (Vulkan NDC y-down)");
     expect_near(lo[2], 0.0f, 1e-5f, "near bound -> clip z = 0");
 
     const auto hi = mul43(m, 6.0f, 3.0f, 10.0f);
     expect_near(hi[0], 1.0f, 1e-5f, "right bound -> clip x = +1");
-    expect_near(hi[1], 1.0f, 1e-5f, "top bound -> clip y = +1");
+    expect_near(hi[1], -1.0f, 1e-5f, "top bound -> clip y = -1 (Vulkan NDC y-down)");
     expect_near(hi[2], 1.0f, 1e-5f, "far bound -> clip z = +1");
 }
 

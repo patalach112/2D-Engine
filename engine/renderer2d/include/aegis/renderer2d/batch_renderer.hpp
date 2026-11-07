@@ -11,17 +11,22 @@
 #include <array>
 #include <vector>
 
+#include <aegis/renderer2d/glyph_instance.hpp>
 #include <aegis/renderer2d/line_instance.hpp>
+#include <aegis/renderer2d/part_instance.hpp>
 #include <aegis/renderer2d/sprite_instance.hpp>
 
 namespace aegis::renderer2d {
 
 /// Draw pipelines owned by the batch renderer. Particle uses additive blending
-/// (glow/energy); Sprite, Line and UI use standard alpha blending. Line is a
-/// specialized world-space segment pipeline (orbit paths, velocity vectors);
-/// its instances are bit-compatible with SpriteInstance (see line_instance.hpp)
-/// and share the same persistently mapped instance buffers.
-enum class PrimitiveKind : core::u32 { Sprite = 0, Particle = 1, UI = 2, Line = 3 };
+/// (glow/energy); Sprite, Line, UI, Glyph and Part use standard alpha blending.
+/// Line is a specialized world-space segment pipeline (orbit paths, velocity
+/// vectors); its instances are bit-compatible with SpriteInstance and share the
+/// same persistently mapped instance buffers. Glyph is the bitmap-text pipeline
+/// (no textures; the 5x7 rows travel inside the instance, see glyph_instance.hpp).
+/// Part is the procedural part pipeline (SDF silhouettes, see part_instance.hpp)
+/// and uses its own 56-byte instance ring.
+enum class PrimitiveKind : core::u32 { Sprite = 0, Particle = 1, UI = 2, Line = 3, Glyph = 4, Part = 5 };
 
 [[nodiscard]] const char* primitive_kind_name(PrimitiveKind kind) noexcept;
 
@@ -33,13 +38,17 @@ struct BatchStats {
     core::u64 particle_instances = 0;
     core::u64 ui_instances = 0;
     core::u64 line_instances = 0;
+    core::u64 glyph_instances = 0;
+    core::u64 part_instances = 0;
     /// Accumulated over the renderer's lifetime (never reset).
     core::u64 lifetime_draw_calls = 0;
     core::u64 lifetime_instances = 0;
 };
 
 struct BatchRendererConfig {
-    /// Hard cap on instanced quads per frame (per frames-in-flight ring slot).
+    /// Hard cap on instanced quads per frame and per instance class
+    /// (the 40-byte class: Sprite/Particle/UI/Line/Glyph — and the 56-byte
+    /// Part class gets its own ring of the same size).
     core::u32 max_instances = 8192;
     /// Number of frames-in-flight; one persistently mapped instance buffer is kept per slot.
     core::u32 max_frames_in_flight = 2;
@@ -79,6 +88,11 @@ public:
     /// Creates the renderer: shaders are loaded from the AEGIS_SPV_DIR baked in
     /// at build time, four pipelines are created (sprite / additive / UI / line),
     /// and max_frames_in_flight persistent instance buffers are allocated and mapped.
+    /// Stride of the shared 40-byte instance class (Sprite/Particle/UI/Line/Glyph).
+    static constexpr core::u32 kInstanceStride40 = sizeof(SpriteInstance);
+    /// Stride of the Part instance class.
+    static constexpr core::u32 kInstanceStride56 = sizeof(PartInstance);
+
     [[nodiscard]] static core::Result<BatchRenderer> create(
         VkDevice device,
         const VkPhysicalDeviceMemoryProperties& memory_properties,
@@ -97,6 +111,8 @@ public:
     void draw_particle(const SpriteInstance& instance);
     void draw_ui(const SpriteInstance& instance);
     void draw_line(const LineInstance& instance);
+    void draw_glyph(const GlyphInstance& instance);
+    void draw_part(const PartInstance& instance);
     /// Convenience overload. `thickness` is in WORLD units (use
     /// Camera2D::world_per_pixel() * desired_px for constant screen width).
     void draw_line(core::f32 ax, core::f32 ay, core::f32 bx, core::f32 by,
@@ -115,18 +131,20 @@ public:
 private:
     struct Batch {
         PrimitiveKind kind = PrimitiveKind::Sprite;
-        core::u32 first_instance = 0;
+        core::u32 first_instance = 0;  ///< index into the class ring (stride-aligned)
         core::u32 instance_count = 0;
     };
 
     enum class BlendMode : core::u32 { Normal = 0, Additive = 1 };
 
-    void append(PrimitiveKind kind, const void* instance_bytes);
+    void append(PrimitiveKind kind, const void* instance_bytes, core::u32 instance_bytes_size);
     void close_open_batch();
     core::Result<void> create_pipelines();
     core::Result<VkShaderModule> load_shader_module(const char* spv_filename) const;
     VkPipeline create_pipeline(VkShaderModule vert, VkShaderModule frag, BlendMode blend,
-                               core::u32 instance_stride) const;
+                               core::u32 instance_stride,
+                               const VkVertexInputAttributeDescription* attributes,
+                               core::u32 attribute_count) const;
     void destroy() noexcept;
 
     VkDevice device_ = VK_NULL_HANDLE;
@@ -134,13 +152,15 @@ private:
     BatchRendererConfig config_{};
 
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
-    std::array<VkPipeline, 4> pipelines_{};  // indexed by PrimitiveKind
+    std::array<VkPipeline, 6> pipelines_{};  // indexed by PrimitiveKind
 
-    std::vector<memory::GpuBuffer> instance_buffers_;
+    std::vector<memory::GpuBuffer> instance_buffers_;      // 40-byte class
+    std::vector<memory::GpuBuffer> part_instance_buffers_; // 56-byte class
 
     VkCommandBuffer cmd_ = VK_NULL_HANDLE;
     core::u32 frame_index_ = 0;
-    core::u32 append_index_ = 0;
+    core::u32 append_index_ = 0;       // 40-byte class cursor
+    core::u32 append_part_index_ = 0;  // 56-byte class cursor
     std::array<core::f32, 16> projection_{};
     VkExtent2D extent_{};
 

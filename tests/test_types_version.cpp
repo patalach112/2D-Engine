@@ -26,10 +26,10 @@ AEGIS_TEST(types, "aliases preserve signedness and width") {
     AEGIS_CHECK(std::is_floating_point_v<f64>);
 }
 
-AEGIS_TEST(version, "milestone 5 ships 0.1.0") {
+AEGIS_TEST(version, "milestone 10 ships 0.2.0") {
     AEGIS_CHECK_EQ(kVersionMajor, 0);
-    AEGIS_CHECK_EQ(kVersionMinor, 1);
+    AEGIS_CHECK_EQ(kVersionMinor, 2);
     AEGIS_CHECK_EQ(kVersionPatch, 0);
-    AEGIS_CHECK_EQ(std::string(kVersionString), std::string("0.1.0"));
-    AEGIS_CHECK_EQ(kMilestone, 5);
+    AEGIS_CHECK_EQ(std::string(kVersionString), std::string("0.2.0"));
+    AEGIS_CHECK_EQ(kMilestone, 10);
 }

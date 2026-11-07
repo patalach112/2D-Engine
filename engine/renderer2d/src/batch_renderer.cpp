@@ -26,6 +26,8 @@ const char* primitive_kind_name(const PrimitiveKind kind) noexcept {
         case PrimitiveKind::Particle: return "particle";
         case PrimitiveKind::UI: return "ui";
         case PrimitiveKind::Line: return "line";
+        case PrimitiveKind::Glyph: return "glyph";
+        case PrimitiveKind::Part: return "part";
     }
     return "unknown";
 }
@@ -39,6 +41,7 @@ BatchRenderer::BatchRenderer(BatchRenderer&& other) noexcept
       layout_(std::exchange(other.layout_, VK_NULL_HANDLE)),
       pipelines_(other.pipelines_),
       instance_buffers_(std::move(other.instance_buffers_)),
+      part_instance_buffers_(std::move(other.part_instance_buffers_)),
       extent_(other.extent_),
       stats_(other.stats_),
       lifetime_draw_calls_(other.lifetime_draw_calls_),
@@ -59,6 +62,7 @@ BatchRenderer& BatchRenderer::operator=(BatchRenderer&& other) noexcept {
         pipelines_ = other.pipelines_;
         other.pipelines_.fill(VK_NULL_HANDLE);
         instance_buffers_ = std::move(other.instance_buffers_);
+        part_instance_buffers_ = std::move(other.part_instance_buffers_);
         extent_ = other.extent_;
         stats_ = other.stats_;
         lifetime_draw_calls_ = other.lifetime_draw_calls_;
@@ -97,7 +101,9 @@ core::Result<BatchRenderer> BatchRenderer::create(const VkDevice device,
     renderer.config_ = config;
 
     const core::u64 buffer_bytes = static_cast<core::u64>(config.max_instances) * sizeof(SpriteInstance);
+    const core::u64 part_buffer_bytes = static_cast<core::u64>(config.max_instances) * sizeof(PartInstance);
     renderer.instance_buffers_.reserve(config.max_frames_in_flight);
+    renderer.part_instance_buffers_.reserve(config.max_frames_in_flight);
     for (u32 frame = 0; frame < config.max_frames_in_flight; ++frame) {
         memory::GpuBufferDesc desc;
         desc.size = buffer_bytes;
@@ -113,6 +119,18 @@ core::Result<BatchRenderer> BatchRenderer::create(const VkDevice device,
                 buffer.error().native_code);
         }
         renderer.instance_buffers_.push_back(std::move(buffer.value()));
+
+        memory::GpuBufferDesc part_desc = desc;
+        part_desc.size = part_buffer_bytes;
+        auto part_buffer = memory::GpuBuffer::create(device, memory_properties, part_desc);
+        if (!part_buffer) {
+            renderer.destroy();
+            return core::Result<BatchRenderer>::failure(
+                part_buffer.error().code,
+                "failed to allocate part instance buffer: " + part_buffer.error().message,
+                part_buffer.error().native_code);
+        }
+        renderer.part_instance_buffers_.push_back(std::move(part_buffer.value()));
     }
 
     if (auto result = renderer.create_pipelines(); !result) {
@@ -124,8 +142,8 @@ core::Result<BatchRenderer> BatchRenderer::create(const VkDevice device,
     }
 
     AEGIS_LOG_INFO("[aegis] batch renderer created: " << config.max_instances
-                   << " instances x " << config.max_frames_in_flight
-                   << " frames-in-flight (" << (buffer_bytes >> 10) << " KiB/frame)");
+                   << " instances (40B) + " << config.max_instances << " part instances (56B) x "
+                   << config.max_frames_in_flight << " frames-in-flight");
     return core::Result<BatchRenderer>::ok(std::move(renderer));
 }
 
@@ -139,16 +157,19 @@ void BatchRenderer::begin_frame(const VkCommandBuffer cmd,
     std::memcpy(projection_.data(), projection, sizeof(projection_));
     extent_ = extent;
     append_index_ = 0;
+    append_part_index_ = 0;
     open_batch_valid_ = false;
     batches_.clear();
     overflow_warned_ = false;
     stats_ = BatchStats{};
 }
 
-void BatchRenderer::draw_sprite(const SpriteInstance& instance) { append(PrimitiveKind::Sprite, &instance); }
-void BatchRenderer::draw_particle(const SpriteInstance& instance) { append(PrimitiveKind::Particle, &instance); }
-void BatchRenderer::draw_ui(const SpriteInstance& instance) { append(PrimitiveKind::UI, &instance); }
-void BatchRenderer::draw_line(const LineInstance& instance) { append(PrimitiveKind::Line, &instance); }
+void BatchRenderer::draw_sprite(const SpriteInstance& instance) { append(PrimitiveKind::Sprite, &instance, sizeof(SpriteInstance)); }
+void BatchRenderer::draw_particle(const SpriteInstance& instance) { append(PrimitiveKind::Particle, &instance, sizeof(SpriteInstance)); }
+void BatchRenderer::draw_ui(const SpriteInstance& instance) { append(PrimitiveKind::UI, &instance, sizeof(SpriteInstance)); }
+void BatchRenderer::draw_line(const LineInstance& instance) { append(PrimitiveKind::Line, &instance, sizeof(LineInstance)); }
+void BatchRenderer::draw_glyph(const GlyphInstance& instance) { append(PrimitiveKind::Glyph, &instance, sizeof(GlyphInstance)); }
+void BatchRenderer::draw_part(const PartInstance& instance) { append(PrimitiveKind::Part, &instance, sizeof(PartInstance)); }
 
 void BatchRenderer::draw_line(const core::f32 ax, const core::f32 ay, const core::f32 bx, const core::f32 by,
                               const core::f32 r, const core::f32 g, const core::f32 b, const core::f32 a,
@@ -167,11 +188,38 @@ void BatchRenderer::draw_line(const core::f32 ax, const core::f32 ay, const core
     draw_line(instance);
 }
 
-void BatchRenderer::append(const PrimitiveKind kind, const void* const instance) {
+void BatchRenderer::append(const PrimitiveKind kind, const void* const instance,
+                           const core::u32 instance_bytes_size) {
     if (cmd_ == VK_NULL_HANDLE) {
         if (!overflow_warned_) {
             AEGIS_LOG_WARN("[aegis] BatchRenderer::draw_* called outside begin_frame; dropping instance");
             overflow_warned_ = true;
+        }
+        return;
+    }
+    static_assert(sizeof(SpriteInstance) == sizeof(LineInstance) && sizeof(LineInstance) == sizeof(GlyphInstance),
+                  "the 40-byte class must keep a uniform stride");
+    const bool part_class = (kind == PrimitiveKind::Part);
+    if (part_class) {
+        if (append_part_index_ >= config_.max_instances) {
+            if (!overflow_warned_) {
+                AEGIS_LOG_WARN("[aegis] part instance buffer full (max_instances=" << config_.max_instances
+                               << "); dropping further part instances this frame");
+                overflow_warned_ = true;
+            }
+            return;
+        }
+        const u32 slot = append_part_index_++;
+        part_instance_buffers_[frame_index_].write(instance, static_cast<u64>(slot) * sizeof(PartInstance),
+                                                   sizeof(PartInstance));
+        if (!open_batch_valid_ || open_kind_ != kind) {
+            close_open_batch();
+            open_kind_ = kind;
+            open_batch_first_ = slot;
+            open_batch_count_ = 1;
+            open_batch_valid_ = true;
+        } else {
+            ++open_batch_count_;
         }
         return;
     }
@@ -183,12 +231,10 @@ void BatchRenderer::append(const PrimitiveKind kind, const void* const instance)
         }
         return;
     }
-
-    constexpr u64 kInstanceBytes = sizeof(SpriteInstance);
-    static_assert(sizeof(LineInstance) == kInstanceBytes,
-                  "all instance payloads must share the 40-byte stride");
     const u32 slot = append_index_++;
-    instance_buffers_[frame_index_].write(instance, static_cast<u64>(slot) * kInstanceBytes, kInstanceBytes);
+    instance_buffers_[frame_index_].write(instance, static_cast<u64>(slot) * sizeof(SpriteInstance),
+                                          sizeof(SpriteInstance));
+    (void)instance_bytes_size;
 
     if (!open_batch_valid_ || open_kind_ != kind) {
         close_open_batch();
@@ -233,13 +279,25 @@ void BatchRenderer::flush() {
 
     u32 draw_calls = 0;
     u64 instance_count = 0;
-    u64 sprite = 0, particle = 0, ui = 0, line = 0;
+    u64 sprite = 0, particle = 0, ui = 0, line = 0, glyph = 0, part = 0;
 
     for (const Batch& batch : batches_) {
         const auto kind_index = static_cast<std::size_t>(batch.kind);
         vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_[kind_index]);
         vkCmdPushConstants(cmd_, layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(projection_),
                            projection_.data());
+
+        // Binding 0 carries the persistently mapped instance buffer. Bind it for every
+        // batch (not just once per frame) so the draw is always preceded by a bind of the
+        // buffer its pipeline's binding 0 descriptor targets. The binding offset stays 0
+        // and the per-batch instance offset travels in vkCmdDraw's firstInstance — binding
+        // a 40-byte-stride offset would not be guaranteed to satisfy
+        // minVertexInputBindingOffsetAlignment on all devices.
+        const VkBuffer instance_buffer = (batch.kind == PrimitiveKind::Part)
+                                             ? part_instance_buffers_[frame_index_].handle()
+                                             : instance_buffers_[frame_index_].handle();
+        constexpr VkDeviceSize binding_offset = 0;
+        vkCmdBindVertexBuffers(cmd_, 0, 1, &instance_buffer, &binding_offset);
         vkCmdDraw(cmd_, 6, batch.instance_count, 0, batch.first_instance);
 
         ++draw_calls;
@@ -249,6 +307,8 @@ void BatchRenderer::flush() {
             case PrimitiveKind::Particle: particle += batch.instance_count; break;
             case PrimitiveKind::UI: ui += batch.instance_count; break;
             case PrimitiveKind::Line: line += batch.instance_count; break;
+            case PrimitiveKind::Glyph: glyph += batch.instance_count; break;
+            case PrimitiveKind::Part: part += batch.instance_count; break;
         }
     }
 
@@ -258,6 +318,8 @@ void BatchRenderer::flush() {
     stats_.particle_instances = particle;
     stats_.ui_instances = ui;
     stats_.line_instances = line;
+    stats_.glyph_instances = glyph;
+    stats_.part_instances = part;
 
     lifetime_draw_calls_ += draw_calls;
     lifetime_instances_ += instance_count;
@@ -294,6 +356,27 @@ core::Result<void> BatchRenderer::create_pipelines() {
         return core::Result<void>::failure(line_frag.error().code, line_frag.error().message,
                                            line_frag.error().native_code);
     }
+    auto part_vert = load_shader_module(AEGIS_SPV_DIR "/part.vert.spv");
+    auto part_frag = load_shader_module(AEGIS_SPV_DIR "/part.frag.spv");
+    auto glyph_vert = load_shader_module(AEGIS_SPV_DIR "/glyph.vert.spv");
+    auto glyph_frag = load_shader_module(AEGIS_SPV_DIR "/glyph.frag.spv");
+    if (!part_vert || !part_frag || !glyph_vert || !glyph_frag) {
+        for (VkShaderModule module : {part_vert ? part_vert.value() : VK_NULL_HANDLE,
+                                      part_frag ? part_frag.value() : VK_NULL_HANDLE,
+                                      glyph_vert ? glyph_vert.value() : VK_NULL_HANDLE,
+                                      glyph_frag ? glyph_frag.value() : VK_NULL_HANDLE}) {
+            if (module != VK_NULL_HANDLE) {
+                vkDestroyShaderModule(device_, module, nullptr);
+            }
+        }
+        vkDestroyShaderModule(device_, vert.value(), nullptr);
+        vkDestroyShaderModule(device_, frag.value(), nullptr);
+        vkDestroyShaderModule(device_, line_vert.value(), nullptr);
+        vkDestroyShaderModule(device_, line_frag.value(), nullptr);
+        const char* which = !part_vert ? "part.vert" : !part_frag ? "part.frag" : !glyph_vert ? "glyph.vert" : "glyph.frag";
+        return core::Result<void>::failure(core::ErrorCode::VulkanFailure,
+                                           std::string("failed to load ") + which + " SPIR-V");
+    }
 
     VkPushConstantRange push_range{};
     push_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -311,24 +394,58 @@ core::Result<void> BatchRenderer::create_pipelines() {
         vkDestroyShaderModule(device_, frag.value(), nullptr);
         vkDestroyShaderModule(device_, line_vert.value(), nullptr);
         vkDestroyShaderModule(device_, line_frag.value(), nullptr);
+        vkDestroyShaderModule(device_, part_vert.value(), nullptr);
+        vkDestroyShaderModule(device_, part_frag.value(), nullptr);
+        vkDestroyShaderModule(device_, glyph_vert.value(), nullptr);
+        vkDestroyShaderModule(device_, glyph_frag.value(), nullptr);
         return core::Result<void>::failure(core::ErrorCode::VulkanFailure,
                                            "vkCreatePipelineLayout failed",
                                            static_cast<core::i32>(result));
     }
 
-    pipelines_[static_cast<std::size_t>(PrimitiveKind::Sprite)] =
-        create_pipeline(vert.value(), frag.value(), BlendMode::Normal, sizeof(SpriteInstance));
-    pipelines_[static_cast<std::size_t>(PrimitiveKind::Particle)] =
-        create_pipeline(vert.value(), frag.value(), BlendMode::Additive, sizeof(SpriteInstance));
-    pipelines_[static_cast<std::size_t>(PrimitiveKind::UI)] =
-        create_pipeline(vert.value(), frag.value(), BlendMode::Normal, sizeof(SpriteInstance));
-    pipelines_[static_cast<std::size_t>(PrimitiveKind::Line)] =
-        create_pipeline(line_vert.value(), line_frag.value(), BlendMode::Normal, sizeof(LineInstance));
+    constexpr VkFormat kVec4 = VK_FORMAT_R32G32B32A32_SFLOAT;
+    constexpr VkFormat kVec2 = VK_FORMAT_R32G32_SFLOAT;
+    constexpr VkFormat kF32 = VK_FORMAT_R32_SFLOAT;
+    const std::array<VkVertexInputAttributeDescription, 3> attributes_40{{
+        {0, 0, kVec4, 0},
+        {1, 0, kVec4, 16},
+        {2, 0, kVec2, 32},
+    }};
+    constexpr VkFormat kUVec2 = VK_FORMAT_R32G32_UINT;
+    const std::array<VkVertexInputAttributeDescription, 3> attributes_glyph{{
+        {0, 0, kVec4, 0},
+        {1, 0, kVec4, 16},
+        {2, 0, kUVec2, 32},
+    }};
+    const std::array<VkVertexInputAttributeDescription, 5> attributes_part{{
+        {0, 0, kVec4, 0},
+        {1, 0, kVec4, 16},
+        {2, 0, kF32, 32},
+        {3, 0, kVec4, 36},
+        {4, 0, kF32, 52},
+    }};
+
+    pipelines_[static_cast<std::size_t>(PrimitiveKind::Sprite)] = create_pipeline(
+        vert.value(), frag.value(), BlendMode::Normal, sizeof(SpriteInstance), attributes_40.data(), 3);
+    pipelines_[static_cast<std::size_t>(PrimitiveKind::Particle)] = create_pipeline(
+        vert.value(), frag.value(), BlendMode::Additive, sizeof(SpriteInstance), attributes_40.data(), 3);
+    pipelines_[static_cast<std::size_t>(PrimitiveKind::UI)] = create_pipeline(
+        vert.value(), frag.value(), BlendMode::Normal, sizeof(SpriteInstance), attributes_40.data(), 3);
+    pipelines_[static_cast<std::size_t>(PrimitiveKind::Line)] = create_pipeline(
+        line_vert.value(), line_frag.value(), BlendMode::Normal, sizeof(LineInstance), attributes_40.data(), 3);
+    pipelines_[static_cast<std::size_t>(PrimitiveKind::Glyph)] = create_pipeline(
+        glyph_vert.value(), glyph_frag.value(), BlendMode::Normal, sizeof(GlyphInstance), attributes_glyph.data(), 3);
+    pipelines_[static_cast<std::size_t>(PrimitiveKind::Part)] = create_pipeline(
+        part_vert.value(), part_frag.value(), BlendMode::Normal, sizeof(PartInstance), attributes_part.data(), 5);
 
     vkDestroyShaderModule(device_, vert.value(), nullptr);
     vkDestroyShaderModule(device_, frag.value(), nullptr);
     vkDestroyShaderModule(device_, line_vert.value(), nullptr);
     vkDestroyShaderModule(device_, line_frag.value(), nullptr);
+    vkDestroyShaderModule(device_, part_vert.value(), nullptr);
+    vkDestroyShaderModule(device_, part_frag.value(), nullptr);
+    vkDestroyShaderModule(device_, glyph_vert.value(), nullptr);
+    vkDestroyShaderModule(device_, glyph_frag.value(), nullptr);
 
     for (std::size_t i = 0; i < pipelines_.size(); ++i) {
         if (pipelines_[i] == VK_NULL_HANDLE) {
@@ -344,7 +461,9 @@ core::Result<void> BatchRenderer::create_pipelines() {
 VkPipeline BatchRenderer::create_pipeline(const VkShaderModule vert,
                                           const VkShaderModule frag,
                                           const BlendMode blend,
-                                          const core::u32 instance_stride) const {
+                                          const core::u32 instance_stride,
+                                          const VkVertexInputAttributeDescription* const attributes,
+                                          const core::u32 attribute_count) const {
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -355,26 +474,18 @@ VkPipeline BatchRenderer::create_pipeline(const VkShaderModule vert,
     stages[1].module = frag;
     stages[1].pName = "main";
 
-    // No vertex buffers: a single instance-rate binding carries SpriteInstance.
+    // No vertex buffers: a single instance-rate binding carries the instances.
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
     binding.stride = instance_stride;
     binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-    constexpr VkFormat kVec4 = VK_FORMAT_R32G32B32A32_SFLOAT;
-    constexpr VkFormat kVec2 = VK_FORMAT_R32G32_SFLOAT;
-    const std::array<VkVertexInputAttributeDescription, 3> attributes{{
-        {0, 0, kVec4, 0},
-        {1, 0, kVec4, 16},
-        {2, 0, kVec2, 32},
-    }};
-
     VkPipelineVertexInputStateCreateInfo vertex_input{};
     vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertex_input.vertexBindingDescriptionCount = 1;
     vertex_input.pVertexBindingDescriptions = &binding;
-    vertex_input.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
-    vertex_input.pVertexAttributeDescriptions = attributes.data();
+    vertex_input.vertexAttributeDescriptionCount = attribute_count;
+    vertex_input.pVertexAttributeDescriptions = attributes;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -511,6 +622,7 @@ void BatchRenderer::destroy() noexcept {
         layout_ = VK_NULL_HANDLE;
     }
     instance_buffers_.clear();  // GpuBuffer destructors release buffer + memory
+    part_instance_buffers_.clear();
     cmd_ = VK_NULL_HANDLE;
     device_ = VK_NULL_HANDLE;
 }
