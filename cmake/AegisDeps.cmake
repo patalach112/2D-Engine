@@ -4,6 +4,7 @@
 #   Vulkan-Headers v1.3.295   — API headers (no SDK install required)
 #   volk          1.3.295     — Vulkan loader bootstrap (loaded via dlopen at runtime)
 #   glfw          3.4         — windowing (optional; Null platform fallback when X11/Wayland absent)
+#   glslang       14.3.0      — build-time GLSL -> SPIR-V compiler (validator binary only; not linked)
 #
 # FetchContent_Populate is used (instead of MakeAvailable) for projects whose
 # CMake config we don't want to polluting the build; the policy floor is clamped
@@ -14,6 +15,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM "3.5")  # glfw 3.4 declares cmake_minimum_requi
 set(AEGIS_VULKAN_HEADERS_TAG "v1.3.295" CACHE STRING "Vulkan-Headers git tag")
 set(AEGIS_VOLK_TAG           "1.3.295"  CACHE STRING "volk git tag")
 set(AEGIS_GLFW_TAG           "3.4"      CACHE STRING "glfw git tag")
+set(AEGIS_GLSLANG_TAG        "14.3.0"   CACHE STRING "glslang git tag (build-time shader compiler)")
 
 if(POLICY CMP0168)
     cmake_policy(SET CMP0168 OLD)  # FetchContent_Populate is deprecated in CMake >= 3.30
@@ -106,3 +108,22 @@ if(AEGIS_WINDOWED)
         add_library(aegis::glfw ALIAS glfw)
     endif()
 endif()
+
+# --------------------------------------------------------------------------
+# glslang (14.3.0) — build-time GLSL -> SPIR-V compiler (glslangValidator binary
+# only). NOT linked into the engine; used via custom commands to produce .spv
+# artifacts. Lean configuration: no HLSL frontend, no SPIRV-Tools optimizer.
+# --------------------------------------------------------------------------
+set(ENABLE_HLSL           OFF CACHE BOOL "" FORCE)
+set(ENABLE_SPVREMAPPER    OFF CACHE BOOL "" FORCE)
+set(ENABLE_OPT            OFF CACHE BOOL "" FORCE)
+set(ENABLE_GLSLANG_BINARIES ON CACHE BOOL "" FORCE)
+set(ENABLE_NVTT           OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS     OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(glslang
+    GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
+    GIT_TAG        ${AEGIS_GLSLANG_TAG}
+    GIT_SHALLOW    TRUE)
+FetchContent_Populate(glslang)
+add_subdirectory(${glslang_SOURCE_DIR} ${glslang_BINARY_DIR} EXCLUDE_FROM_ALL)
