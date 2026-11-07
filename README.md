@@ -4,11 +4,13 @@ Lightweight, ultra-high-performance 2D game engine for **space flight simulation
 C++20, Vulkan 1.3, clean console-style architecture (low-level core + modular renderer,
 batch rendering, offscreen PNG verification).
 
-> **Status: Milestone 5 — Test Scene & Offscreen Renderer** ✅ (builds clean, unit tests green)
+> **Status: Milestone 6 — Fortran Math Bridge & Kepler Solver** ✅ (builds clean, unit tests green)
 >
-> All five milestones are implemented and compile-verified here. Runtime Vulkan execution
-> (the windowed demos and the `aegis_rocket_dump` PNG capture) requires a machine with a
-> Vulkan 1.3 driver — see "Verification" below.
+> Phase-1 core exists (M1–M5 compile-verified; windowed Vulkan runs need a Vulkan 1.3 driver).
+> Milestone 6 adds the Fortran kernel bridge: the Kepler/orbit math runs as Fortran modules
+> behind a C ABI when `gfortran` is present, with a numerically identical C++ fallback otherwise
+> (A/B equivalence unit tests). The Vulkan runtime paths are driver-verified on your machine —
+> see "Verification" below.
 
 ## Requirements
 
@@ -16,6 +18,7 @@ batch rendering, offscreen PNG verification).
 |------|---------|-------|
 | CMake | ≥ 3.24 | Ninja generator recommended (`pip install cmake ninja`) |
 | C++ compiler | C++20 | GCC 12+, Clang 15+, MSVC 2022 |
+| gfortran | optional | Enables the Fortran orbit kernels (M6). MSYS2/MinGW64: `pacman -S mingw-w64-x86_64-gcc-fortran`; Debian: `apt install gfortran`. Auto-detected — see `AEGIS_ENABLE_FORTRAN` |
 | Vulkan loader | 1.3 | Runtime only; `volk` dlopen's it (libvulkan.so.1 / vulkan-1.dll) |
 | X11 or Wayland dev files | — | Linux windowed builds; auto-detected. Without them glfw falls back to its Null platform |
 
@@ -30,6 +33,9 @@ cmake --preset=debug
 cmake --build --preset=debug
 
 # Windows/macOS or Linux with X11/Wayland dev files: same commands give you a real window.
+# Fortran kernels (M6): AUTO (default — used when gfortran is found), ON (required), OFF (C++ fallback)
+cmake --preset=debug -DAEGIS_ENABLE_FORTRAN=ON
+
 # Force a backend explicitly if auto-detection is wrong for you:
 cmake -S . -B build/manual -DGLFW_BUILD_WAYLAND=ON -DGLFW_BUILD_X11=OFF
 
@@ -73,7 +79,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 | 2 | VRAM Allocator & 2D Buffers (vertex/index allocators, TransferQueue) | ✅ done |
 | 3 | Universal 2D Batch Renderer (instanced rockets/particles/UI) | ✅ done |
 | 4 | Camera & Orbital Trajectory System (2D zoom camera, orbit/velocity lines) | ✅ done |
-| 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | ✅ done (this milestone) |
+| 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | ✅ done |
+| 6 | Fortran Math Bridge & Kepler Solver (Fortran kernels behind a C ABI; C++ fallback) | ✅ done (this milestone) |
 
 ## Repository layout
 
@@ -81,7 +88,9 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 ├── cmake/                 # AegisDeps.cmake (pinned FetchContent), warning flags
 ├── engine/
 │   ├── core/              # aegis_core       — fixed-width types, Result<T>, logging, asserts (no Vulkan)
-│   ├── orbit/             # aegis_orbit      — Keplerian orbital mechanics (two-body, Vulkan-free)
+│   ├── orbit/             # aegis_orbit      — Keplerian orbital mechanics (two-body, Vulkan-free;
+│                          #                Fortran kernels via iso_c_binding when gfortran is found,
+│                          #                C++ fallback otherwise) + orbit_c.h C ABI + internal.hpp
 │   ├── vk/                # aegis_vk         — volk instance, physical-device scoring, logical device
 │   │                      #                (optional dedicated transfer queue), swapchain (+recreate),
 │   │                      #                GLFW surface
@@ -200,6 +209,34 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
   it visibly stretches near periapsis), a soft cyan orbit path, scroll-zoom/WASD/follow
   controls and a pixel-anchored HUD (border + panel + speed/radius bars).
 
+## Design notes (M6)
+
+- **Kernel split, one implementation of record per backend**: `engine/orbit/fortran/aegis_kernels.f90`
+  hosts the numerical kernels (`solve_kepler`, `state_at`, `sample_path`) as free-form Fortran
+  modules using `iso_c_binding`; the original Milestone-4 C++ code moved, numerically unchanged,
+  into `engine/orbit/src/orbit_fallback.cpp` (`detail::fallback_*`). `orbit.cpp` keeps the public
+  API and dispatches at compile time on `AEGIS_HAVE_FORTRAN` — no runtime dispatch, no virtual.
+- **C ABI** (`aegis/orbit/orbit_c.h`, pure C): scalar-only arguments, `out_state[8]` /
+  `out_xy[2*samples]` buffers, no structs by value, no allocations, no I/O — trivially callable
+  from C++ and, later, from other toolchains. The header is always includable; the symbols exist
+  only when the build found a Fortran compiler.
+- **Numerical parity is tested, not hoped for**: with Fortran enabled, the public API *is* the
+  Fortran path; `tests/test_orbit_kernels.cpp` A/B-compares it against the C++ fallback across a
+  Kepler-anomaly grid (e ∈ {0, 0.28, 0.5, 0.9}, 997-point grid + out-of-range inputs), orbit states
+  at 8 times over a full 26 s demo orbit (including t = 1e6 s), and the 128-point path sampling —
+  tolerances 1e-7…1e-11 (position/velocity/anomalies). Without Fortran, the suite logs its disabled
+  state and the fallback is covered by the untouched M4 test grid.
+- **Build auto-detection**: `AEGIS_ENABLE_FORTRAN=AUTO|ON|OFF` (root `CMakePresets`-visible cache
+  option, default AUTO). AUTO uses the Fortran kernels when `check_language(Fortran)` finds `gfortran`,
+  otherwise configures the C++ fallback with a STATUS note; ON turns a missing compiler into a hard
+  error (for CI). `AEGIS_FORTRAN_NATIVE=ON` opts into `-march=native`; default is `-O3
+  -ffp-contract=off -fimplicit-none` for cross-machine IEEE parity (no fast-math, no contraction).
+  `.mod` files stay in the build tree. Windows/MinGW users get Fortran from
+  `pacman -S mingw-w64-x86_64-gcc-fortran`.
+- **Why a fallback at all**: keeps the engine buildable and fully testable on machines without a
+  Fortran toolchain (headless CI included) while the Fortran backend is the reference on real
+  development machines — the A/B tests keep both honest.
+
 ## Design notes (M5)
 
 - **`aegis_offscreen`**: a surface-free Vulkan path for headless frame capture. One private
@@ -229,9 +266,13 @@ This repository's CI environment has **no Vulkan driver and no GPU**. What that 
 
 - Everything compiles warning-free on `debug`, `ci` (`-Werror`) and `headless` presets.
 - All Vulkan-free logic (allocator, Result, logging, projection, camera, orbital mechanics,
-  PNG round trip, …) is unit-tested — 46/46 tests pass (2,036 checks).
+  PNG round trip, …) is unit-tested — 47/47 tests pass (2,037 checks) with the C++ Fortran
+  fallback path active (this container has no gfortran); with Fortran enabled the suite
+  gains the three A/B equivalence groups (49 tests total).
 - `ctest` runs 3 cases: `aegis_tests`, `aegis_roundtrip` and `aegis_rocket_dump` —
   both driver-dependent tools **skip cleanly (exit 0)** without a driver.
+- Fortran kernel path is not compile-verified in this container (no gfortran); it is verified
+  by the A/B equivalence tests on machines with `gfortran` installed.
 - Driver-dependent paths cannot execute without a driver. On a Vulkan 1.3 machine:
   `ctest --preset=debug --output-on-failure` (runs the upload→readback byte-compare and
   renders + writes `rocket_frame.png`), or run the tools directly as shown above.

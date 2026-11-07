@@ -4,6 +4,7 @@ add_executable(aegis_tests
     test_log.cpp
     test_main.cpp
     test_orbit.cpp
+    test_orbit_kernels.cpp
     test_png_writer.cpp
     test_projection.cpp
     test_result.cpp
