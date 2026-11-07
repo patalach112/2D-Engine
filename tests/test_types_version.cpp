@@ -31,5 +31,5 @@ AEGIS_TEST(version, "milestone 8 ships 0.1.0") {
     AEGIS_CHECK_EQ(kVersionMinor, 1);
     AEGIS_CHECK_EQ(kVersionPatch, 0);
     AEGIS_CHECK_EQ(std::string(kVersionString), std::string("0.1.0"));
-    AEGIS_CHECK_EQ(kMilestone, 8);
+    AEGIS_CHECK_EQ(kMilestone, 9);
 }

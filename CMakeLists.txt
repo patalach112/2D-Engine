@@ -102,6 +102,7 @@ if(AEGIS_BUILD_TOOLS)
     add_subdirectory(tools/aegis_rocket_dump)
     add_subdirectory(tools/aegis_assembly_check)
     add_subdirectory(tools/aegis_flight_check)
+    add_subdirectory(tools/aegis_game_check)
 endif()
 
 if(AEGIS_BUILD_TESTS)

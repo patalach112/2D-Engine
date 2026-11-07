@@ -147,10 +147,6 @@ int exit_from_failure(const char* stage) {
 
 }  // namespace
 
-#else  // !AEGIS_WINDOWED
-namespace {
-int exit_from_failure(const char*) { return 1; }
-}  // namespace
 #endif
 #if AEGIS_WINDOWED
 namespace {
@@ -616,7 +612,7 @@ int main() {
 #if AEGIS_WINDOWED
     return run_windowed();
 #else
-    AEGIS_LOG_INFO("Aegis2D 9 — aegis_game (windowed build). "
+    AEGIS_LOG_INFO("Aegis2D — aegis_game (headless build). "
                    "Configure with -DAEGIS_WINDOWED=ON to open the VAB.");
     return 0;
 #endif

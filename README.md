@@ -4,15 +4,18 @@ Lightweight, ultra-high-performance 2D game engine for **space flight simulation
 C++20, Vulkan 1.3, clean console-style architecture (low-level core + modular renderer,
 batch rendering, offscreen PNG verification).
 
-> **Status: Milestone 8 — Physics Integration & Flight Dynamics** ✅ (builds clean, unit tests green)
+> **Status: Milestone 9 — The Game: VAB → Flight → Orbital Map** ✅ (builds clean, unit tests green)
 >
 > Phase-1 core exists (M1–M6 compile-verified; windowed Vulkan runs need a Vulkan 1.3 driver).
 > Milestone 7 adds the SFS-style part system (grid assembly, staging, splits, mass/CoM/Izz).
 > Milestone 8 adds deterministic rigid-body flight dynamics on top of it: propellant drain with
 > flameouts, momentum-conserving stage separation, ballistic detached stages, quadratic drag,
-> an exponential atmosphere, soft contact with impact detection — headless, f64 RK4 at 1/240 s,
-> unit-tested and ctest-registered. The Vulkan runtime paths are driver-verified on your machine —
-> see "Verification" below.
+> an exponential atmosphere, soft contact with impact detection — headless, f64 RK4 at 1/240 s.
+> **Milestone 9 ships `aegis_game`** — a playable Kerbal-Space-Program-style loop: assemble a
+> rocket in the Vehicle Assembly Building, stage it from a launch pad, fly it under full
+> rigid-body physics, and toggle a live Keplerian **orbital map** (M) while it flies. Three
+> built-in craft presets, zero external assets (every pixel is procedural), unit-tested
+> headlessly and driver-verified on your machine — see "Verification" below.
 
 ## Requirements
 
@@ -61,10 +64,28 @@ ctest --preset=debug
 
 # Milestone 8: fly that rocket — liftoff, stage separations, 21.9 km apogee, propellant budget
 ./build/debug/tools/aegis_flight_check/aegis_flight_check                # "FLIGHT/ASCENT_VERIFIED"
+
+# Milestone 9: render the game's scenes offscreen (VAB, t+2 s flight, orbital map) to PNGs
+./build/debug/tools/aegis_game_check/aegis_game_check                    # aegis_game_vab.png / _flight.png / _map.png
+
+# Milestone 9: play the game (windowed)
+./build/debug/apps/aegis_game/aegis_game                                 # Aegis2D — Vehicle Assembly Building
 ```
 
 `aegis_orbit_demo` controls: **scroll** = cursor-anchored zoom · **WASD/arrows** = pan ·
 **F** = follow the planet · **R** = reset camera · **Esc** = quit.
+
+`aegis_game` controls:
+
+| Screen | Keys / mouse |
+|--------|--------------|
+| VAB | **scroll** zoom · **LMB** place part · **X/Delete** remove · **S** toggle mirror symmetry · **1/2/3** load craft preset (HOPPER / ORBITER / RADIAL TRIPLE) · **LAUNCH** button to fly |
+| Flight | **A/D** or **Q/E** or **←/→** pitch · **W/S** or **↑/↓** throttle · **Space/Enter** fire next stage · **M** toggle orbital map · **ESC** abort to VAB |
+
+The flight HUD shows T+, altitude, velocity, predicted apoapsis, an ORBIT/IMPACT-PREDICTED
+status line and the propellant drain; the staging panel on the right tracks which stage fires
+next. In the map view the predicted Keplerian trajectory is drawn live (AP/PE markers, prograde
+tick); **physics keeps running while the map is open** — burn, then check your apoapsis.
 
 ### Headless / CI
 
@@ -90,7 +111,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 | 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | ✅ done |
 | 6 | Fortran Math Bridge & Kepler Solver (Fortran kernels behind a C ABI; C++ fallback) | ✅ done |
 | 7 | Part System & Vehicle Assembly (grid snap, staging, mass CoM) | ✅ done |
-| 8 | Physics Integration & Flight Dynamics (RK4, propellant drain, separation Δv, ballistic stages, contact) | ✅ done (this milestone) |
+| 8 | Physics Integration & Flight Dynamics (RK4, propellant drain, separation Δv, ballistic stages, contact) | ✅ done |
+| 9 | The Game: VAB → Flight → Orbital Map (`aegis_game`, craft presets, HUD, map overlay, `aegis_game_check`) | ✅ done (this milestone) |
 
 ## Repository layout
 
@@ -114,18 +136,28 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 │   ├── renderer2d/        # aegis_renderer2d — BatchRenderer (instanced quads: sprite, particle, UI,
 │   │                      #                line), Camera2D (2D zoom camera), make_orthographic
 │   │                      #                (column-major, GLM-free), BatchStats
-│   └── offscreen/         # aegis_offscreen  — surface-free offscreen renderer (RGBA8 → readback),
-│                          #                PNG writer (miniz DEFLATE + CRC-32)
+│   ├── offscreen/         # aegis_offscreen  — surface-free offscreen renderer (RGBA8 → readback),
+│   │                      #                PNG writer (miniz DEFLATE + CRC-32)
+│   ├── render/            # aegis_render     — CameraRig (smooth-zoom/target), procedural part renderer
+│   │                      #                (13 built-in templates, plumes, snap highlights), planet/sky
+│   │                      #                painter, UI bridge (M9)
+│   └── ui/                # aegis_ui         — immediate-mode UI kernel (panels, buttons, bars, toggles,
+│                          #                sliders, text) + embedded 5x7 bitmap font (M9)
 ├── apps/
 │   ├── aegis_demo/        # Milestone 1 demo: window + clear loop (dynamic rendering)
 │   ├── aegis_roundtrip/   # Milestone 2 check: upload→readback→byte-compare (registered with ctest)
 │   ├── aegis_batch_demo/  # Milestone 3 demo: rocket + starfield + HUD on the batch renderer
-│   └── aegis_orbit_demo/  # Milestone 4 demo: sun/planet solar system; scroll-zoom camera, orbit path,
-│                          #                velocity vector, pixel-anchored HUD
+│   ├── aegis_orbit_demo/  # Milestone 4 demo: sun/planet solar system; scroll-zoom camera, orbit path,
+│   │                      #                velocity vector, pixel-anchored HUD
+│   └── aegis_game/        # Milestone 9 — the game: VAB (palette/grid/staging/launch validation),
+│                          #                flight (pad, sky, HUD, throttle, staging), orbital map.
+│                          #                Simulation (game_session, Vulkan-free) split from rendering
+│                          #                (scene.cpp + aegis_render/aegis_ui)
 ├── tools/
 │   ├── aegis_rocket_dump/ # Milestone 5 tool: deterministic rocket scene → rocket_frame.png (ctest)
 │   ├── aegis_assembly_check/ # Milestone 7 tool: three-stage rocket build/stage/verify (ctest)
-│   └── aegis_flight_check/ # Milestone 8 tool: three-stage ascent, propellant budget, apogee (ctest)
+│   ├── aegis_flight_check/ # Milestone 8 tool: three-stage ascent, propellant budget, apogee (ctest)
+│   └── aegis_game_check/ # Milestone 9 tool: VAB/flight/map → aegis_game_*.png (ctest; skips w/o driver)
 ├── tests/                 # zero-dependency unit test harness (aegis_test.hpp)
 ├── shaders/               # quad.vert|frag (sprites/particles/UI), line.vert|frag — GLSL → SPIR-V
 └── CMakePresets.json      # debug / release / ci / headless
@@ -383,14 +415,17 @@ This repository's CI environment has **no Vulkan driver and no GPU**. What that 
 
 - Everything compiles warning-free on `debug`, `ci` (`-Werror`) and `headless` presets.
 - All Vulkan-free logic (allocator, Result, logging, projection, camera, orbital mechanics,
-  PNG round trip, parts/staging, flight dynamics & propellant drain, …) is unit-tested —
-  129/129 tests pass (2,455 checks) with the C++ Fortran fallback path active (this container
-  has no gfortran); with Fortran enabled the suite additionally gains the three A/B
-  kernel-equivalence groups.
-- `ctest` runs 5 cases: `aegis_tests`, `aegis_roundtrip`, `aegis_rocket_dump`,
-  `aegis_assembly_check` and `aegis_flight_check` — the two driver-dependent tools **skip
-  cleanly (exit 0)** without a driver; `aegis_assembly_check` and `aegis_flight_check` are
-  driver-free and always run.
+  PNG round trip, parts/staging, flight dynamics & propellant drain, game session FSM …) is
+  unit-tested — 170/170 tests pass (2,871 checks) with the C++ Fortran fallback path active
+  (this container has no gfortran); with Fortran enabled the suite additionally gains the three
+  A/B kernel-equivalence groups.
+- `ctest` runs 6 cases: `aegis_tests`, `aegis_roundtrip`, `aegis_rocket_dump`,
+  `aegis_assembly_check`, `aegis_flight_check` and `aegis_game_check` — the three
+  driver-dependent tools **skip cleanly (exit 0)** without a driver; `aegis_assembly_check`
+  and `aegis_flight_check` are driver-free and always run. `aegis_game_check` additionally
+  exercises the full game session (demo launch, stage sequencing, map toggle) while
+  rendering; the PNGs it writes (`aegis_game_vab.png`, `aegis_game_flight.png`,
+  `aegis_game_map.png`) are the visual-verification artifacts on driver machines.
 - Fortran kernel path: the container has no gfortran, so the .f90 itself is line-audited
   (132-col/literal-kind/continuation checks) rather than compiled. The ABI is machine-checked:
   `orbit_c.h` parses as C99 (-Wall -Wextra -Werror) and as C++; the `#ifdef AEGIS_HAVE_FORTRAN`
