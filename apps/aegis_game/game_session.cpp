@@ -255,6 +255,17 @@ void GameSession::recompute_preview() noexcept {
     preview_ = to_preview(candidates.front(), false);
 }
 
+core::f32 GameSession::symmetry_axis_wu() const noexcept {
+    for (core::u32 pi = 0; pi < static_cast<core::u32>(build_.parts().size()); ++pi) {
+        const parts::Part* pod_part = build_.part(pi);
+        const parts::PartTemplate* pod_tmpl = pod_part ? template_or(pod_part->tmpl) : nullptr;
+        if (pod_tmpl != nullptr && pod_tmpl->category == parts::PartCategory::CommandPod) {
+            return build_.part_center_wu(pi)[0];
+        }
+    }
+    return 0.5f;  // deck centreline — the VAB build axis
+}
+
 bool GameSession::place_selected() noexcept {
     const HoverPreview preview = hover_preview();  // by value — snap() mutates state
     if (!preview.valid) {
@@ -292,15 +303,7 @@ bool GameSession::place_selected() noexcept {
         // Mirror twin across the vertical axis through the command pod (the
         // build centreline, matching the dashed orange VAB axis). Using the
         // pod keeps the axis fixed while asymmetric parts are attached.
-        core::f32 axis_wu = 0.5f;
-        for (core::u32 pi = 0; pi < static_cast<core::u32>(build_.parts().size()); ++pi) {
-            const parts::Part* pod_part = build_.part(pi);
-            const parts::PartTemplate* pod_tmpl = pod_part ? template_or(pod_part->tmpl) : nullptr;
-            if (pod_tmpl != nullptr && pod_tmpl->category == parts::PartCategory::CommandPod) {
-                axis_wu = build_.part_center_wu(pi)[0];
-                break;
-            }
-        }
+        const core::f32 axis_wu = symmetry_axis_wu();
         const core::Result<parts::PartIndex> twin = build_.mirror_snap(
             preview.parent_index, preview.parent_node, selected_, preview.child_node, preview.child_rot,
             parts::Axis::Vertical, axis_wu);

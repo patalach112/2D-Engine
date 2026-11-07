@@ -112,6 +112,9 @@ public:
     [[nodiscard]] std::array<core::f32, 2> last_placement() const noexcept {
         return {last_placement_x_, last_placement_y_};
     }
+    /// World x of the mirror symmetry axis — the command pod's centre (the
+    /// dashed orange VAB axis). Falls back to the deck centreline (x = 0.5).
+    [[nodiscard]] core::f32 symmetry_axis_wu() const noexcept;
 
     [[nodiscard]] core::f64 build_mass_kg() const noexcept;
     [[nodiscard]] core::f64 delta_v_estimate() const noexcept;  ///< gravity-assist-free ideal Δv (m/s)

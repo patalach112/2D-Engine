@@ -299,19 +299,11 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         // Mirror ghost: show the twin that symmetry will place.
         if (preview.valid && session.symmetry() == Symmetry::MirrorVertical &&
             preview.parent_index != parts::kInvalidPart) {
-            core::f32 axis_wu = 0.5f;
-            for (const parts::Part& part : assembly.parts()) {
-                if (part.tmpl == parts::kInvalidTemplate) {
-                    continue;
-                }
-                const parts::PartTemplate* ptmpl = aegis::parts::find_template(part.tmpl);
-                if (ptmpl != nullptr && ptmpl->category == parts::PartCategory::CommandPod) {
-                    axis_wu = assembly.part_center_wu(static_cast<core::u32>(&part - &assembly.parts()[0]))[0];
-                    break;
-                }
-            }
+            const core::f32 axis_wu = session.symmetry_axis_wu();
             const core::f32 mirrored_x = 2.0f * axis_wu - preview.origin_x;
-            const core::u8 mirrored_rot = static_cast<core::u8>(preview.rot ^ aegis::parts::kFlipBit);
+            // Exactly the rotation mirror_snap() will use — including the CCW
+            // re-index — so the ghost never lies about what lands.
+            const core::u8 mirrored_rot = aegis::parts::mirror_rot_vertical(preview.rot);
             const core::f32 mirrored_rotation =
                 static_cast<core::f32>(aegis::parts::rot_of(mirrored_rot)) * (kPi * 0.5f);
             core::u32 mirror_flags = static_cast<core::u32>(aegis::renderer2d::kPartFlagGhost);
