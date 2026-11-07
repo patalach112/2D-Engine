@@ -160,9 +160,12 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     const aegis::ui::UiRect palette{14.0f, kHeaderH + 12.0f, 236.0f, vh - kHeaderH - 12.0f - 78.0f};
     const core::f32 info_w = 272.0f;
     const aegis::ui::UiRect info{vw - info_w - 14.0f, kHeaderH + 12.0f, info_w, vh - kHeaderH - 12.0f - 14.0f};
+    // Header strip hosts LAUNCH and the craft switcher — clicks there must
+    // never fall through to canvas placement.
+    const bool over_header = input.mouse_y >= 0.0f && input.mouse_y < kHeaderH;
     const bool over_palette = point_in(input, palette);
     const bool over_info = point_in(input, info);
-    const bool over_panel = over_palette || over_info;
+    const bool over_panel = over_palette || over_info || over_header;
 
     // --- keyboard -------------------------------------------------------
     if (input.pressed(aegis::ui::UiKey::S)) {
@@ -178,9 +181,9 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             (void)session.remove_at_cursor();
         } else if (session.place_selected()) {
             // SFS-style snap flash: expanding ring at the freshly placed node.
-            const HoverPreview placed_preview = session.hover_preview();
-            state.flash_x = placed_preview.has_target ? placed_preview.node_x : placed_preview.origin_x;
-            state.flash_y = placed_preview.has_target ? placed_preview.node_y : placed_preview.origin_y;
+            const auto anchor = session.last_placement();
+            state.flash_x = anchor[0];
+            state.flash_y = anchor[1];
             state.flash_time = wall_clock_s;
         }
     }
@@ -632,8 +635,11 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             }
             char part[32];
             std::snprintf(part, sizeof(part), fmt, count);
+            // snprintf returns the would-be length; keep `used` honest so the
+            // size argument can never underflow.
             used += static_cast<std::size_t>(std::snprintf(buffer + used, sizeof(buffer) - used, "%s%s",
                                                            used ? "   " : "", part));
+            used = std::min(used, sizeof(buffer) - 1);
         };
         chip("%u×ENG", engines);
         chip("%u×SEP", decouplers);
@@ -1294,7 +1300,9 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
                   cursor < stages.size() ? kAccentGreen : kNeutral)) {
         session.activate_stage();
     }
-    std::snprintf(buffer, sizeof(buffer), "STAGE %u/%zu", cursor, stages.size());
+    const core::u32 next_stage =
+        static_cast<core::u32>(std::min<std::size_t>(static_cast<std::size_t>(cursor) + 1u, stages.size()));
+    std::snprintf(buffer, sizeof(buffer), "STAGE %u/%zu", stages.empty() ? 0u : next_stage, stages.size());
     ui.text(vw - 161.0f, vh - 118.0f, 9.0f, buffer, kTextDim, aegis::ui::TextAlign::Center,
             aegis::ui::FontWeight::SemiBold);
 

@@ -50,8 +50,14 @@ public:
     // --- Assignment ---------------------------------------------------------
 
     /// Assign (or re-assign) a stage to a stageable part (Engine, Decoupler,
-    /// Fairing). Tanks, pods and struts are rejected.
+    /// Fairing). Tanks, pods and struts are rejected, as are stage >= kMaxStages.
     [[nodiscard]] core::Result<void> assign(const VehicleAssembly& asmbl, PartIndex part, u8 stage);
+
+    /// Drop assignments for parts that are dead (tombstoned) in `asmbl` and
+    /// rebuild the dense stage list. Call after any structural removal so
+    /// orphaned-but-staged parts cannot leave phantom stages behind.
+    /// Returns the number of assignments pruned.
+    core::u32 prune(const VehicleAssembly& asmbl);
 
     /// Remove any assignment for a part.
     [[nodiscard]] core::Result<void> unassign(PartIndex part);
@@ -74,8 +80,10 @@ public:
     ///   1. FireDecoupler actions (in firing order) cut incident adjacency
     ///      edges; the assembly is then split and the pod-bearing component is
     ///      adopted back into `asmbl`; other components go to `detached`.
-    ///   2. JettisonFairing actions tombstone the fairings (they travel with
-    ///      whatever component they are still part of).
+    ///   2. JettisonFairing actions flood-fill the alive Fairing-category
+    ///      cluster seeded by the staged fairings (BFS stops at non-fairing
+    ///      parts, so a payload inside stays), detach it as a ballistic
+    ///      free-flyer via split_members() and adopt the remainder.
     ///   3. IgniteEngine actions are recorded only (M8 owns thrust).
     /// Returns the fired actions; advances the cursor once per call. Fails
     /// when the list is exhausted.

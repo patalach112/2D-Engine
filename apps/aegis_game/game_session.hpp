@@ -106,6 +106,12 @@ public:
     [[nodiscard]] const parts::StagingList& staging() const noexcept { return staging_; }
     [[nodiscard]] core::u64 build_version() const noexcept { return build_version_; }
     [[nodiscard]] const HoverPreview& hover_preview() noexcept;  ///< lazily recomputed
+    /// Where the last successful placement actually landed (snap node, or part
+    /// centre for a pad-root drop) — for the VAB snap-flash effect. Set by
+    /// place_selected(); unaffected by the recomputed ghost.
+    [[nodiscard]] std::array<core::f32, 2> last_placement() const noexcept {
+        return {last_placement_x_, last_placement_y_};
+    }
 
     [[nodiscard]] core::f64 build_mass_kg() const noexcept;
     [[nodiscard]] core::f64 delta_v_estimate() const noexcept;  ///< gravity-assist-free ideal Δv (m/s)
@@ -155,10 +161,10 @@ private:
 
     parts::VehicleAssembly build_;
     parts::StagingList staging_;
-    parts::VehicleAssembly scratch_;  ///< preview scratch (copied, never rendered from)
     parts::TemplateId selected_ = 1;  ///< Long-2 Tank
     Symmetry symmetry_ = Symmetry::None;
     core::f32 cursor_x_ = 0.0f, cursor_y_ = 0.0f;
+    core::f32 last_placement_x_ = 0.0f, last_placement_y_ = 0.0f;
     HoverPreview preview_;
     bool preview_dirty_ = true;
     core::u64 build_version_ = 0;

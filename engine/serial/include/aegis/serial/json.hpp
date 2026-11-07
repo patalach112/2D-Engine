@@ -57,7 +57,14 @@ public:
 
     void push_back(Json value) noexcept(false) { as_array().push_back(std::move(value)); }
     void set(std::string key, Json value) noexcept(false) {
-        as_object().push_back({std::move(key), std::move(value)});
+        auto& members = as_object();
+        for (auto& member : members) {
+            if (member.first == key) {  // replace in place — no duplicate keys
+                member.second = std::move(value);
+                return;
+            }
+        }
+        members.push_back({std::move(key), std::move(value)});
     }
 
     [[nodiscard]] Kind kind() const noexcept { return kind_; }

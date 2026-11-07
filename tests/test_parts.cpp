@@ -734,5 +734,68 @@ AEGIS_TEST(parts, "consume_propellant rejects tombstoned parts") {
     AEGIS_CHECK(!drained.has_value());
 }
 
+AEGIS_TEST(parts, "can_place reports overlap without mutating the assembly") {
+    DemoRocket r = build_demo_rocket();
+    // Footprint of the liftoff engine slot (0,0) is occupied; probing it must
+    // fail, probing an empty cell beside it must succeed — and neither probe
+    // may add or remove parts.
+    const u32 alive_before = r.asmbl.alive_count();
+    AEGIS_CHECK(!r.asmbl.can_place(kSparrow, 0, 0, 0));
+    AEGIS_CHECK(r.asmbl.can_place(kSparrow, 4, 4, 0));  // stack lives at x=0
+    AEGIS_CHECK(!r.asmbl.can_place(0xFFFF, 0, 9, 0));
+    AEGIS_CHECK_EQ(r.asmbl.alive_count(), alive_before);
+    AEGIS_CHECK(r.asmbl.is_alive(r.pod));
+}
+
+AEGIS_TEST(parts, "jettison_fairings is atomic — a bad id aborts the whole drop") {
+    DemoRocket r = build_demo_rocket();
+    // The pod is not a fairing: the call must fail and the fairing must survive.
+    const core::Result<u32> bad = r.asmbl.jettison_fairings({r.fairing, r.pod});
+    AEGIS_CHECK(!bad.has_value());
+    AEGIS_CHECK(r.asmbl.is_alive(r.fairing));
+    AEGIS_CHECK(r.asmbl.is_alive(r.pod));
+    // Retry with a clean list — the earlier failure must not have half-applied.
+    const core::Result<u32> good = r.asmbl.jettison_fairings({r.fairing});
+    AEGIS_REQUIRE(good.has_value());
+    AEGIS_CHECK_EQ(good.value(), 1u);
+    AEGIS_CHECK(!r.asmbl.is_alive(r.fairing));
+}
+
+AEGIS_TEST(parts, "assign rejects a stage index beyond kMaxStages") {
+    DemoRocket r = build_demo_rocket();
+    StagingList staging;
+    AEGIS_CHECK(!staging.assign(r.asmbl, r.liftoff, kMaxStages).has_value());
+    AEGIS_CHECK(!staging.assign(r.asmbl, r.liftoff, 0xFF).has_value());
+    AEGIS_CHECK(staging.assign(r.asmbl, r.liftoff, kMaxStages - 1).has_value());
+}
+
+AEGIS_TEST(parts, "prune drops staged assignments whose parts were tombstoned") {
+    DemoRocket r = build_demo_rocket();
+    StagingList staging;
+    (void)staging.auto_assign(r.asmbl);
+    AEGIS_REQUIRE(staging.is_staged(r.booster_left_engine));
+    // Deleting the tank joint above the left booster orphans the booster
+    // engine *and* its tank — the staging list must follow the tombstones.
+    AEGIS_REQUIRE(r.asmbl.remove(r.booster_left_tank).has_value());
+    const u32 pruned = staging.prune(r.asmbl);
+    AEGIS_CHECK(pruned >= 1u);
+    AEGIS_CHECK(!staging.is_staged(r.booster_left_engine));
+    // The live stages still fire and advance the cursor deterministically.
+    const u8 stages = staging.stage_count();
+    for (u8 i = 0; i < stages; ++i) {
+        AEGIS_REQUIRE(staging.activate_next_stage(r.asmbl).has_value());
+    }
+    AEGIS_CHECK(!staging.activate_next_stage(r.asmbl).has_value());
+}
+
+AEGIS_TEST(parts, "prune on a pristine list removes nothing and keeps stages dense") {
+    DemoRocket r = build_demo_rocket();
+    StagingList staging;
+    (void)staging.auto_assign(r.asmbl);
+    const u8 before = staging.stage_count();
+    AEGIS_CHECK_EQ(staging.prune(r.asmbl), 0u);
+    AEGIS_CHECK_EQ(staging.stage_count(), before);
+}
+
 }  // namespace
 }  // namespace aegis::parts

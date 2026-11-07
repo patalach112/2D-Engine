@@ -95,6 +95,10 @@ core::Result<void> StagingList::assign(const VehicleAssembly& asmbl, const PartI
         return core::Result<void>::failure(ErrorCode::InvalidArgument,
                                            "assign(): only engines, decouplers and fairings are stageable");
     }
+    if (stage >= kMaxStages) {
+        return core::Result<void>::failure(ErrorCode::InvalidArgument,
+                                           "assign(): stage index exceeds kMaxStages");
+    }
     assignments_[part] = stage;
     action_kinds_[part] = action_for(tmpl->category);
     rebuild_stages();
@@ -291,6 +295,25 @@ core::Result<StageFireResult> StagingList::activate_next_stage(VehicleAssembly& 
     result.fired = stage.items;  // already in firing order
     ++cursor_;
     return core::Result<StageFireResult>::ok(std::move(result));
+}
+
+u32 StagingList::prune(const VehicleAssembly& asmbl) {
+    std::vector<u32> dead;
+    for (const auto& [part, stage] : assignments_) {
+        (void)stage;
+        const Part* p = asmbl.part(static_cast<PartIndex>(part));
+        if (p == nullptr) {
+            dead.push_back(part);
+        }
+    }
+    for (const u32 part : dead) {
+        assignments_.erase(part);
+        action_kinds_.erase(part);
+    }
+    if (!dead.empty()) {
+        rebuild_stages();
+    }
+    return static_cast<u32>(dead.size());
 }
 
 void StagingList::clear_all() noexcept {

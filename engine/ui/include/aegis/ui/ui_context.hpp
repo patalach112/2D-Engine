@@ -92,9 +92,16 @@ public:
 
     // --- ids -----------------------------------------------------------------
 
-    [[nodiscard]] static core::u64 make_id(std::string_view label) noexcept { return hash_id(label); }
+    /// id 0 is the reserved "no widget" sentinel in click_widget(); fold a
+    /// (astronomically unlikely, but possible) zero hash to a non-zero id so a
+    /// widget can never become unclickable.
+    [[nodiscard]] static core::u64 make_id(std::string_view label) noexcept {
+        const core::u64 id = hash_id(label);
+        return id == 0 ? 1 : id;
+    }
     [[nodiscard]] static core::u64 make_id(std::string_view label, core::u64 index) noexcept {
-        return hash_id_indexed(label, index);
+        const core::u64 id = hash_id_indexed(label, index);
+        return id == 0 ? 1 : id;
     }
 
     // --- output / state -------------------------------------------------------

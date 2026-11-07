@@ -118,6 +118,12 @@ public:
                                                       TemplateId child, NodeId child_node,
                                                       u8 rot, Axis axis, f32 axis_wu);
 
+    /// Read-only placement probe: would `tmpl` fit at (gx, gy, rot) without
+    /// overlapping a live part? No mutation, no allocation beyond the footprint
+    /// array. Used by the VAB ghost preview every frame. Grid alignment and
+    /// node opposition are the caller's contract (snap() enforces both).
+    [[nodiscard]] bool can_place(TemplateId tmpl, i16 gx, i16 gy, u8 rot) const noexcept;
+
     /// Remove a part and every part that is only attached through it
     /// (subtree cut). Returns the number of parts removed (tombstoned).
     [[nodiscard]] core::Result<u32> remove(PartIndex index);
