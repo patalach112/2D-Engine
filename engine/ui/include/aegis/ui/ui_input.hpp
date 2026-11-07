@@ -17,7 +17,7 @@ enum class UiKey : core::u8 {
     Backspace,
     Delete,
     Tab,
-    A, D, E, F, M, Q, R, S, W, X, Z,
+    A, D, E, F, G, M, Q, R, S, W, X, Z,
     Up, Down, Left, Right,
     LeftShift,
     LeftCtrl,

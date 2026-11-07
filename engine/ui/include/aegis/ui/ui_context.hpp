@@ -59,6 +59,16 @@ public:
     /// Translucent underlay + panel fill + border — the standard panel chrome.
     void panel(core::f32 x, core::f32 y, core::f32 w, core::f32 h, UiColor fill,
                UiColor border) noexcept;
+    /// Panel chrome with engineering corner ticks: soft shadow, fill, 1px
+    /// border, and 8px L-shaped accent ticks at the four corners.
+    void panel_frame(core::f32 x, core::f32 y, core::f32 w, core::f32 h, UiColor fill,
+                     UiColor border, UiColor accent) noexcept;
+    /// 1px divider line (underlay pass first).
+    void divider(core::f32 x, core::f32 y, core::f32 w, UiColor color) noexcept;
+    /// Pure interaction: hit-test + capture + release-inside semantics, but
+    /// emits NO draw items (the caller draws custom chrome around the hit area).
+    [[nodiscard]] bool press_button(core::u64 id, core::f32 x, core::f32 y, core::f32 w,
+                                    core::f32 h) noexcept;
 
     // --- widgets ------------------------------------------------------------
 

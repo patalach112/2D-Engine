@@ -30,6 +30,14 @@ enum class Symmetry : core::u8 { None, MirrorVertical };
 
 inline constexpr core::f64 kPadElevation = 1.7;  ///< m — rocket sits this far above the surface at t = 0
 
+/// One placeable connection node near the cursor (world units). Collected so
+/// the VAB can render every live snap point, not only the chosen one.
+struct CompatibleNodeMarker {
+    core::f32 x = 0.0f;
+    core::f32 y = 0.0f;
+    bool chosen = false;  ///< this marker is the current snap target
+};
+
 /// Placement preview for the VAB ghost. Recomputed lazily whenever the
 /// (cursor, selection, build version) triple changes.
 struct HoverPreview {
@@ -47,6 +55,9 @@ struct HoverPreview {
     parts::NodeId parent_node = 0;
     parts::NodeId child_node = 0;
     core::u8 child_rot = 0;
+    // Every currently placeable node within the snap radius (cap 96 markers).
+    core::u32 node_marker_count = 0;
+    std::array<CompatibleNodeMarker, 96> node_markers{};
 };
 
 class GameSession {
@@ -98,6 +109,9 @@ public:
 
     [[nodiscard]] core::f64 build_mass_kg() const noexcept;
     [[nodiscard]] core::f64 delta_v_estimate() const noexcept;  ///< gravity-assist-free ideal Δv (m/s)
+    /// Thrust-to-weight at LIFTOFF: stage-0 engines (falling back to every
+    /// engine when staging is empty) over total mass under standard gravity.
+    [[nodiscard]] core::f64 twr_estimate() const noexcept;
     [[nodiscard]] core::u32 part_count() const noexcept;
     /// First blocking issue, or empty string when the rocket can fly.
     [[nodiscard]] std::string launch_blocker() const noexcept;

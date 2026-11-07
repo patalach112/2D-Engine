@@ -62,7 +62,7 @@ const VkClearColorValue kHangarColor = {{0.045f, 0.05f, 0.075f, 1.0f}};
 // ---------------------------------------------------------------------------
 constexpr std::pair<int, aegis::ui::UiKey> kKeyTable[] = {
     {GLFW_KEY_A, aegis::ui::UiKey::A},         {GLFW_KEY_D, aegis::ui::UiKey::D},
-    {GLFW_KEY_E, aegis::ui::UiKey::E},         {GLFW_KEY_F, aegis::ui::UiKey::F},
+    {GLFW_KEY_E, aegis::ui::UiKey::E},         {GLFW_KEY_F, aegis::ui::UiKey::F},         {GLFW_KEY_G, aegis::ui::UiKey::G},
     {GLFW_KEY_M, aegis::ui::UiKey::M},         {GLFW_KEY_Q, aegis::ui::UiKey::Q},
     {GLFW_KEY_R, aegis::ui::UiKey::R},         {GLFW_KEY_S, aegis::ui::UiKey::S},
     {GLFW_KEY_W, aegis::ui::UiKey::W},         {GLFW_KEY_X, aegis::ui::UiKey::X},

@@ -88,6 +88,33 @@ void UiContext::panel(const core::f32 x, const core::f32 y, const core::f32 w, c
     rect_outline(x, y, w, h, border, 1.0f);
 }
 
+void UiContext::panel_frame(const core::f32 x, const core::f32 y, const core::f32 w, const core::f32 h,
+                            const UiColor fill, const UiColor border, const UiColor accent) noexcept {
+    panel(x, y, w, h, fill, border);
+    const core::f32 t = 1.0f;           // 1px ticks — matches the thin-border system
+    const core::f32 len = 9.0f;         // tick length
+    const core::f32 inset = 0.0f;       // ticks sit ON the border line
+    fill_rect(x + inset, y, len, t, accent);
+    fill_rect(x + inset, y, t, len, accent);
+    fill_rect(x + w - inset - len, y, len, t, accent);
+    fill_rect(x + w - inset - t, y, t, len, accent);
+    fill_rect(x + inset, y + h - t, len, t, accent);
+    fill_rect(x + inset, y + h - len, t, len, accent);
+    fill_rect(x + w - inset - len, y + h - t, len, t, accent);
+    fill_rect(x + w - inset - t, y + h - len, t, len, accent);
+}
+
+void UiContext::divider(const core::f32 x, const core::f32 y, const core::f32 w,
+                        const UiColor color) noexcept {
+    fill_rect(x, y, w, 1.0f, color);
+}
+
+bool UiContext::press_button(const core::u64 id, const core::f32 x, const core::f32 y, const core::f32 w,
+                             const core::f32 h) noexcept {
+    const bool hovered = mouse_inside(x, y, w, h);
+    return click_widget(id, hovered);
+}
+
 bool UiContext::click_widget(const core::u64 id, const bool hovered) noexcept {
     if (hovered) {
         hot_ = id;

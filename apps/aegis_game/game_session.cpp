@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 namespace aegis::game {
 
@@ -166,6 +167,16 @@ void GameSession::recompute_preview() noexcept {
     };
 
     constexpr core::f64 kMaxDist2 = static_cast<core::f64>(6.0 * 6.0);
+    bool preview_found = false;
+    // Dedupe collected node markers (same parent node may host several child rots).
+    struct MarkerKey {
+        core::u32 parent;
+        parts::NodeId node;
+        bool operator==(const MarkerKey& other) const { return parent == other.parent && node == other.node; }
+    };
+    std::array<MarkerKey, 256> seen{};
+    core::u32 seen_count = 0;
+
     for (const Candidate& candidate : candidates) {
         if (candidate.d2 > kMaxDist2) {
             break;  // sorted — nothing closer remains
@@ -174,14 +185,41 @@ void GameSession::recompute_preview() noexcept {
         const core::Result<parts::PartIndex> placed = scratch_.snap(candidate.parent, candidate.parent_node,
                                                                     selected_, candidate.child_node,
                                                                     candidate.child_rot);
-        if (placed.has_value()) {
+        if (!placed.has_value()) {
+            continue;
+        }
+        // Record this node as a live snap point (first 96 unique ones).
+        const MarkerKey key{candidate.parent, candidate.parent_node};
+        bool already = false;
+        for (core::u32 i = 0; i < seen_count; ++i) {
+            if (seen[i] == key) {
+                already = true;
+                break;
+            }
+        }
+        if (!already && seen_count < seen.size()) {
+            seen[seen_count++] = key;
+            if (preview_.node_marker_count < preview_.node_markers.size()) {
+                CompatibleNodeMarker marker;
+                marker.x = candidate.node_x;
+                marker.y = candidate.node_y;
+                marker.chosen = !preview_found;
+                preview_.node_markers[preview_.node_marker_count++] = marker;
+            }
+        }
+        if (!preview_found) {
             const auto center = scratch_.part_center_wu(placed.value());
             HoverPreview valid = to_preview(candidate, true);
             valid.origin_x = center[0];  // truth from the assembly itself
             valid.origin_y = center[1];
+            valid.node_marker_count = preview_.node_marker_count;
+            valid.node_markers = preview_.node_markers;
             preview_ = valid;
-            return;
+            preview_found = true;
         }
+    }
+    if (preview_found) {
+        return;
     }
 
     if (candidates.empty()) {
@@ -347,6 +385,39 @@ core::f64 GameSession::delta_v_estimate() const noexcept {
     }
     const core::f64 isp = weighted_isp / thrust_sum;
     return isp * kStandardGravity * std::log(total / dry);
+}
+
+core::f64 GameSession::twr_estimate() const noexcept {
+    // Prefer engines assigned to stage 0 (the liftoff stage); fall back to
+    // every engine in the stack when nothing is staged yet.
+    core::f64 liftoff_thrust = 0.0;
+    const auto& stages = staging_.stages();
+    bool staged_any_engine = false;
+    std::unordered_set<core::u32> liftoff_engines;
+    if (!stages.empty()) {
+        for (const auto& item : stages.front().items) {
+            if (item.action == parts::StageAction::IgniteEngine) {
+                liftoff_engines.insert(static_cast<core::u32>(item.part));
+            }
+        }
+        staged_any_engine = !liftoff_engines.empty();
+    }
+    for (const parts::Part& part : build_.parts()) {
+        if (part.tmpl == parts::kInvalidTemplate) {
+            continue;
+        }
+        const parts::PartTemplate* tmpl = template_or(part.tmpl);
+        if (tmpl == nullptr || !tmpl->is_engine()) {
+            continue;
+        }
+        const core::u32 index = static_cast<core::u32>(&part - build_.parts().data());
+        if (staged_any_engine && liftoff_engines.find(index) == liftoff_engines.end()) {
+            continue;  // not a liftoff engine
+        }
+        liftoff_thrust += static_cast<core::f64>(tmpl->engine.thrust);
+    }
+    const core::f64 weight = static_cast<core::f64>(build_.mass_properties().total_mass) * kStandardGravity;
+    return weight > 0.0 ? liftoff_thrust / weight : 0.0;
 }
 
 std::string GameSession::launch_blocker() const noexcept {

@@ -103,7 +103,7 @@ AEGIS_TEST(ui, "the baked vector atlas is ready and metrics are sane") {
         const GlyphInfo& g = font.glyph(FontWeight::Regular, static_cast<core::u32>(ch));
         AEGIS_CHECK(std::fabs(g.advance - advance) < 1e-3f);
         AEGIS_CHECK(g.u0 >= 0.0f && g.v0 >= 0.0f && g.u1 <= 1.0f && g.v1 <= 1.0f);
-        AEGIS_CHECK(g.u1 > g.u0 && g.v1 > g.v0 || ch == ' ');  // space has no bitmap
+        AEGIS_CHECK((g.u1 > g.u0 && g.v1 > g.v0) || ch == ' ');  // space has no bitmap
     }
     // Unknown codepoints fall back to '?'; the extras (∆ − · …) are reachable.
     AEGIS_CHECK_EQ(FontAtlas::glyph_index(200), FontAtlas::fallback_index());   // é not in the subset
@@ -357,6 +357,40 @@ AEGIS_TEST(ui, "ui is deterministic: identical input sequences produce identical
             AEGIS_CHECK(ctx_a.items()[i].uv == ctx_b.items()[i].uv);
         }
     }
+}
+
+AEGIS_TEST(ui, "panel_frame emits panel + one accent rect per tick arm") {
+    UiContext ctx{test_font()};
+    ctx.begin_frame(mouse_at(0.0f, 0.0f), 800.0f, 600.0f);
+    ctx.panel_frame(10.0f, 10.0f, 100.0f, 80.0f, rgb(0.1f, 0.1f, 0.12f, 0.9f), rgb(0.5f, 0.5f, 0.6f),
+                    rgb(0.35f, 0.85f, 1.0f, 0.8f));
+    // panel() = shadow + fill + 4 border edges; 8 tick arms on top of that.
+    AEGIS_CHECK_EQ(ctx.items().size(), 14u);
+    AEGIS_CHECK(ctx.items().back().color.b > 0.9f);  // accent color wins on the last arm
+}
+
+AEGIS_TEST(ui, "press_button interacts but emits no items") {
+    UiContext ctx{test_font()};
+    const core::u64 id = UiContext::make_id("press_target");
+    // press inside, release inside -> click
+    ctx.begin_frame(press_at(30.0f, 25.0f), 640.0f, 480.0f);
+    AEGIS_CHECK(!ctx.press_button(id, 10.0f, 10.0f, 80.0f, 30.0f));
+    AEGIS_CHECK_EQ(ctx.items().size(), 0u);
+    // release still inside -> completes the click, still no emission
+    UiInput release = mouse_at(30.0f, 25.0f);
+    release.mouse_down = false;
+    release.mouse_released = true;
+    ctx.begin_frame(release, 640.0f, 480.0f);
+    AEGIS_CHECK(ctx.press_button(id, 10.0f, 10.0f, 80.0f, 30.0f));
+    AEGIS_CHECK_EQ(ctx.items().size(), 0u);
+}
+
+AEGIS_TEST(ui, "divider emits a single 1px rect") {
+    UiContext ctx{test_font()};
+    ctx.begin_frame(mouse_at(0.0f, 0.0f), 800.0f, 600.0f);
+    ctx.divider(20.0f, 50.0f, 120.0f, rgb(0.3f, 0.35f, 0.45f, 0.9f));
+    AEGIS_CHECK_EQ(ctx.items().size(), 1u);
+    AEGIS_CHECK(ctx.items()[0].rect.h == 1.0f && ctx.items()[0].rect.w == 120.0f);
 }
 
 AEGIS_TEST(ui, "viewport is exposed and color helpers are constexpr") {

@@ -30,6 +30,7 @@ struct SceneState {
     aegis::ui::FontAtlas font;   ///< baked once at startup; uploaded by the app to the GL
     aegis::ui::UiContext ui;
     bool delete_mode = false;           ///< VAB: click deletes instead of placing
+    bool grid_visible = true;           ///< VAB: G toggles the construction grid
     bool flight_rig_seeded = false;     ///< re-seed camera on launch / reset
     bool map_seeded = false;            ///< first map frame snaps the framing (no glide)
 

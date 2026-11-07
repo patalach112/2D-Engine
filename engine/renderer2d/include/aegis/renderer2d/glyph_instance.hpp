@@ -35,7 +35,7 @@ inline constexpr core::u32 kGlyphUvMax = 0xFFFFu;
 }
 
 /// Inverse of pack_uv16 (used by tests).
-[[nodiscard]] constexpr void unpack_uv16(const core::u32 packed, core::f32& u, core::f32& v) noexcept {
+constexpr void unpack_uv16(const core::u32 packed, core::f32& u, core::f32& v) noexcept {
     u = static_cast<core::f32>(packed & 0xFFFFu) / 65535.0f;
     v = static_cast<core::f32>(packed >> kGlyphUvBits) / 65535.0f;
 }
