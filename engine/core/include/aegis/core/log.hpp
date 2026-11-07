@@ -1,5 +1,7 @@
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <optional>
@@ -16,11 +18,11 @@ namespace aegis::core {
 // ---------------------------------------------------------------------------
 enum class LogLevel : u32 { Debug = 0, Info, Warn, Error };
 
-void log(LogLevel level, const std::string& message) noexcept;
+AEGIS_API void log(LogLevel level, const std::string& message) noexcept;
 
 namespace detail {
 
-class LogStream {
+class AEGIS_API LogStream {
 public:
     explicit LogStream(LogLevel level) : level_(level) {}
     ~LogStream() { log(level_, oss_.str()); }

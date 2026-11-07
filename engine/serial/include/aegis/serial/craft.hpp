@@ -15,6 +15,8 @@
 // fresh loader assembly preserves file order, so indices are stable.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/result.hpp>
 #include <aegis/core/types.hpp>
 #include <aegis/parts/staging.hpp>
@@ -28,13 +30,13 @@ namespace aegis::serial {
 inline constexpr core::u32 kCraftFormatVersion = 1;
 inline constexpr const char* kCraftKind = "aegis-craft";
 
-struct CraftMeta {
+struct AEGIS_API CraftMeta {
     std::string name = "CUSTOM CRAFT";   ///< free-form display name
     std::string engine;                  ///< kVersionString at save time
     core::u32 milestone = 0;             ///< kMilestone at save time
 };
 
-struct Craft {
+struct AEGIS_API Craft {
     parts::VehicleAssembly assembly;
     parts::StagingList staging;
     CraftMeta meta;
@@ -43,12 +45,12 @@ struct Craft {
 /// Serializes the CURRENT build: live parts only (tombstoned slots are
 /// skipped), tank fill levels, and staging assignments. Deterministic — the
 /// same assembly always yields byte-identical output.
-[[nodiscard]] std::string craft_to_json(const parts::VehicleAssembly& assembly,
+[[nodiscard]] AEGIS_API std::string craft_to_json(const parts::VehicleAssembly& assembly,
                                         const parts::StagingList& staging,
                                         const CraftMeta& meta);
 
 /// Parses and rebuilds a craft. Strictly validated; on any failure the error
 /// message explains the problem and no assembly state escapes the call.
-[[nodiscard]] core::Result<Craft> craft_from_json(std::string_view text);
+[[nodiscard]] AEGIS_API core::Result<Craft> craft_from_json(std::string_view text);
 
 }  // namespace aegis::serial

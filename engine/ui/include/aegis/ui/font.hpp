@@ -6,6 +6,8 @@
 // is exact and the glyph shader and this header can never disagree.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 #include <aegis/ui/ui_types.hpp>
 
@@ -20,10 +22,10 @@ inline constexpr core::u32 kGlyphAdvanceCells = 6;  ///< 5px glyph + 1px gap
 inline constexpr core::u32 kGlyphCellCells = 8;     ///< rendering cell (glyph + margin)
 
 /// Row masks for `codepoint` (32..126); anything else maps to '?'.
-[[nodiscard]] const std::array<core::u8, kGlyphRows>& glyph_rows(core::u32 codepoint) noexcept;
+[[nodiscard]] AEGIS_API const std::array<core::u8, kGlyphRows>& glyph_rows(core::u32 codepoint) noexcept;
 
 /// Width of `text` in pixels when the glyph cell height is `size_px`.
-[[nodiscard]] core::f32 text_width_px(std::string_view text, core::f32 size_px) noexcept;
+[[nodiscard]] AEGIS_API core::f32 text_width_px(std::string_view text, core::f32 size_px) noexcept;
 
 /// Height of a line of text in pixels.
 [[nodiscard]] constexpr core::f32 text_height_px(const core::f32 size_px) noexcept { return size_px; }

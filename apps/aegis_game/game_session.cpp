@@ -200,11 +200,14 @@ void GameSession::recompute_preview() noexcept {
         if (candidate.d2 > kMaxDist2) {
             break;  // sorted — nothing closer remains
         }
-        scratch_ = build_;
-        const core::Result<parts::PartIndex> placed = scratch_.snap(candidate.parent, candidate.parent_node,
-                                                                    selected_, candidate.child_node,
-                                                                    candidate.child_rot);
-        if (!placed.has_value()) {
+        // Read-only fit check against live occupancy — no assembly copy. The
+        // candidate was already filtered to grid-aligned, normal-opposing,
+        // node-compatible geometry, so occupancy is the last thing snap()
+        // can still reject.
+        const auto [child_w, child_h] = parts::rotated_dims(child->w, child->h, candidate.child_rot);
+        const core::i16 place_gx = static_cast<core::i16>(std::lround(candidate.center_x - static_cast<core::f32>(child_w) * 0.5f));
+        const core::i16 place_gy = static_cast<core::i16>(std::lround(candidate.center_y - static_cast<core::f32>(child_h) * 0.5f));
+        if (!build_.can_place(selected_, place_gx, place_gy, candidate.child_rot)) {
             continue;
         }
         // Record this node as a live snap point (first 96 unique ones).
@@ -227,10 +230,7 @@ void GameSession::recompute_preview() noexcept {
             }
         }
         if (!preview_found) {
-            const auto center = scratch_.part_center_wu(placed.value());
             HoverPreview valid = to_preview(candidate, true);
-            valid.origin_x = center[0];  // truth from the assembly itself
-            valid.origin_y = center[1];
             valid.node_marker_count = preview_.node_marker_count;
             valid.node_markers = preview_.node_markers;
             preview_ = valid;
@@ -255,6 +255,17 @@ void GameSession::recompute_preview() noexcept {
     preview_ = to_preview(candidates.front(), false);
 }
 
+core::f32 GameSession::symmetry_axis_wu() const noexcept {
+    for (core::u32 pi = 0; pi < static_cast<core::u32>(build_.parts().size()); ++pi) {
+        const parts::Part* pod_part = build_.part(pi);
+        const parts::PartTemplate* pod_tmpl = pod_part ? template_or(pod_part->tmpl) : nullptr;
+        if (pod_tmpl != nullptr && pod_tmpl->category == parts::PartCategory::CommandPod) {
+            return build_.part_center_wu(pi)[0];
+        }
+    }
+    return 0.5f;  // deck centreline — the VAB build axis
+}
+
 bool GameSession::place_selected() noexcept {
     const HoverPreview preview = hover_preview();  // by value — snap() mutates state
     if (!preview.valid) {
@@ -269,6 +280,8 @@ bool GameSession::place_selected() noexcept {
             set_toast("CANNOT PLACE PART");
             return false;
         }
+        last_placement_x_ = preview.origin_x;
+        last_placement_y_ = preview.origin_y;
         bump_build_version();
         return true;
     }
@@ -282,21 +295,15 @@ bool GameSession::place_selected() noexcept {
         set_toast("CANNOT PLACE PART");
         return false;
     }
+    last_placement_x_ = preview.has_target ? preview.node_x : preview.origin_x;
+    last_placement_y_ = preview.has_target ? preview.node_y : preview.origin_y;
     bump_build_version();
 
     if (symmetry_ == Symmetry::MirrorVertical) {
         // Mirror twin across the vertical axis through the command pod (the
         // build centreline, matching the dashed orange VAB axis). Using the
         // pod keeps the axis fixed while asymmetric parts are attached.
-        core::f32 axis_wu = 0.5f;
-        for (core::u32 pi = 0; pi < static_cast<core::u32>(build_.parts().size()); ++pi) {
-            const parts::Part* pod_part = build_.part(pi);
-            const parts::PartTemplate* pod_tmpl = pod_part ? template_or(pod_part->tmpl) : nullptr;
-            if (pod_tmpl != nullptr && pod_tmpl->category == parts::PartCategory::CommandPod) {
-                axis_wu = build_.part_center_wu(pi)[0];
-                break;
-            }
-        }
+        const core::f32 axis_wu = symmetry_axis_wu();
         const core::Result<parts::PartIndex> twin = build_.mirror_snap(
             preview.parent_index, preview.parent_node, selected_, preview.child_node, preview.child_rot,
             parts::Axis::Vertical, axis_wu);
@@ -344,6 +351,7 @@ bool GameSession::remove_at_cursor() noexcept {
         return false;
     }
     (void)staging_.unassign(best_index);
+    (void)staging_.prune(build_);  // orphans tombstoned by the subtree cut may be staged
     bump_build_version();
     return true;
 }

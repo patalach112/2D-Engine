@@ -6,12 +6,14 @@
 // pad close-up (tens of px/m) and orbit overview (1e-4 px/m).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 #include <aegis/renderer2d/camera.hpp>
 
 namespace aegis::render {
 
-class CameraRig {
+class AEGIS_API CameraRig {
 public:
     CameraRig() noexcept;
 

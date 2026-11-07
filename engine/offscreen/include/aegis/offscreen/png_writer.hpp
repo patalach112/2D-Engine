@@ -6,6 +6,8 @@
 // path renders RGBA8 and the writer matches that exactly.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/result.hpp>
 #include <aegis/core/types.hpp>
 
@@ -16,7 +18,7 @@ namespace aegis::offscreen {
 /// (width * 4). Pixels are written to the PNG exactly as provided (no color
 /// space conversion). Returns InvalidArgument for empty images/buffers and
 /// IoError on write/deflate failures.
-[[nodiscard]] core::Result<void> write_png(const char* path,
+[[nodiscard]] AEGIS_API core::Result<void> write_png(const char* path,
                                            core::u32 width,
                                            core::u32 height,
                                            const core::u8* rgba,

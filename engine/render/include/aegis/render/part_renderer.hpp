@@ -6,6 +6,8 @@
 // produce bitwise-identical instance streams.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 #include <aegis/parts/vehicle_assembly.hpp>
 #include <aegis/renderer2d/batch_renderer.hpp>
@@ -19,14 +21,14 @@ namespace aegis::render {
 inline constexpr core::u32 kNoPart = 0xFFFFFFFFu;
 
 /// Map a built-in template's category to its SDF part kind.
-[[nodiscard]] aegis::renderer2d::PartKind part_kind_of(const parts::PartTemplate& tmpl) noexcept;
+[[nodiscard]] AEGIS_API aegis::renderer2d::PartKind part_kind_of(const parts::PartTemplate& tmpl) noexcept;
 
 /// Tasteful livery palette, picked by hash(index, template). Deterministic.
-[[nodiscard]] std::array<core::f32, 4> skin_tint(const parts::PartTemplate& tmpl,
+[[nodiscard]] AEGIS_API std::array<core::f32, 4> skin_tint(const parts::PartTemplate& tmpl,
                                                  core::u32 part_index) noexcept;
 
 /// [0, 1) variant jitter for the part shader (livery/panel noise).
-[[nodiscard]] core::f32 variant_of(core::u32 part_index, parts::TemplateId tmpl) noexcept;
+[[nodiscard]] AEGIS_API core::f32 variant_of(core::u32 part_index, parts::TemplateId tmpl) noexcept;
 
 /// Rotation (radians) applied to instances so assemblies author upright (+y)
 /// and rotate about their CoM with the vehicle.
@@ -34,7 +36,7 @@ inline constexpr core::u32 kNoPart = 0xFFFFFFFFu;
     return static_cast<core::f32>(heading - 1.5707963267948966);  // pi/2 == vertical == no rotation
 }
 
-struct AssemblyDrawOptions {
+struct AEGIS_API AssemblyDrawOptions {
     core::f64 clock_s = 0.0;                 ///< drives beacon blink / plume flicker
     core::f64 throttle = 0.0;                ///< [0, 1] nozzle glow for ignited engines
     core::u32 highlight_index = kNoPart;     ///< cyan snap-target outline
@@ -44,7 +46,7 @@ struct AssemblyDrawOptions {
 /// Draws a whole assembly (alive parts only), iterating in fixed part-index
 /// order. `origin` is the assembly frame origin in world metres (launch pad /
 /// CoM); `heading` rotates the assembly about that origin (pi/2 = upright).
-class PartRenderer {
+class AEGIS_API PartRenderer {
 public:
     void draw_assembly(aegis::renderer2d::BatchRenderer& renderer, const parts::VehicleAssembly& assembly,
                        core::f64 origin_x, core::f64 origin_y, core::f64 heading,

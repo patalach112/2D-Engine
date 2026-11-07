@@ -8,6 +8,8 @@
 // never sees half-drained tanks; mass/CoM/Izz re-aggregate lazily in M7.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/result.hpp>
 #include <aegis/parts/staging.hpp>
 #include <aegis/parts/vehicle_assembly.hpp>
@@ -17,7 +19,7 @@
 
 namespace aegis::physics {
 
-class VehicleFlight {
+class AEGIS_API VehicleFlight {
 public:
     // Fixed integration step (s). advance() loops it; tests use tick() for
     // exact determinism.

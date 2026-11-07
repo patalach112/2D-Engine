@@ -5,6 +5,8 @@
 // sub-allocated buffers instead of creating many tiny GpuBuffers.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -16,7 +18,7 @@
 
 namespace aegis::memory {
 
-struct GpuBufferDesc {
+struct AEGIS_API GpuBufferDesc {
     core::u64 size = 0;
     VkBufferUsageFlags usage = 0;
     VkMemoryPropertyFlags memory_properties = 0;
@@ -30,7 +32,7 @@ struct GpuBufferDesc {
 /// Host-visible buffers are persistently mapped at creation (map/unmap per
 /// upload is pointless for a load-time engine). device-local buffers return
 /// nullptr from mapped().
-class GpuBuffer : public core::NonCopyable {
+class AEGIS_API GpuBuffer : public core::NonCopyable {
 public:
     GpuBuffer() = default;
     ~GpuBuffer();

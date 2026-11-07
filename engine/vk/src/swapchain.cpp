@@ -38,7 +38,16 @@ core::Result<SwapchainResources> build_resources(const VkDevice device, const Ph
 
     // ---- Format: prefer 8-bit BGRA sRGB, fall back to the first advertised format.
     u32 format_count = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &format_count, nullptr);
+    if (const VkResult result = vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &format_count, nullptr);
+        result != VK_SUCCESS) {
+        return core::Result<SwapchainResources>::failure(core::ErrorCode::VulkanFailure,
+                                                         "vkGetPhysicalDeviceSurfaceFormatsKHR failed",
+                                                         static_cast<core::i32>(result));
+    }
+    if (format_count == 0) {
+        return core::Result<SwapchainResources>::failure(core::ErrorCode::VulkanFailure,
+                                                         "surface advertises no formats");
+    }
     std::vector<VkSurfaceFormatKHR> formats(format_count);
     vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &format_count, formats.data());
 

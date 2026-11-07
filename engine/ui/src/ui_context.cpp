@@ -175,6 +175,9 @@ core::f64 UiContext::slider_h(const core::u64 id, const core::f32 x, const core:
         active_ = id;
     }
     core::f64 result = std::clamp(value, 0.0, 1.0);
+    if (w <= 0.0f) {
+        return result;
+    }
     if (active_ == id) {
         if (!input_.mouse_down) {
             active_ = 0;
@@ -204,6 +207,9 @@ core::f64 UiContext::slider_v(const core::u64 id, const core::f32 x, const core:
         active_ = id;
     }
     core::f64 result = std::clamp(value, 0.0, 1.0);
+    if (h <= 0.0f) {
+        return result;
+    }
     if (active_ == id) {
         if (!input_.mouse_down) {
             active_ = 0;

@@ -11,6 +11,8 @@
 // deterministic bytes (same input TTFs -> same atlas, every build).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <array>
@@ -101,7 +103,7 @@ enum class FontWeight : core::u8 { Regular = 0, SemiBold = 1 };
 /// `bearing_y` is the stb convention: the bitmap TOP's offset from the
 /// baseline in y-DOWN pixels (negative for tall glyphs) — add it to the
 /// baseline row to get the quad's top edge in top-left-origin UI space.
-struct GlyphInfo {
+struct AEGIS_API GlyphInfo {
     core::f32 advance = 0.0f;    ///< pen advance
     core::f32 bearing_x = 0.0f;  ///< bitmap left edge relative to the pen
     core::f32 bearing_y = 0.0f;  ///< bitmap top edge relative to the baseline, y-DOWN (add to baseline row)
@@ -110,7 +112,7 @@ struct GlyphInfo {
     core::f32 u0 = 0.0f, v0 = 0.0f, u1 = 0.0f, v1 = 0.0f;
 };
 
-class FontAtlas {
+class AEGIS_API FontAtlas {
 public:
     FontAtlas() noexcept;  // bakes both weights; `ready()` reports success
 

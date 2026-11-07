@@ -199,6 +199,23 @@ core::Result<PartIndex> VehicleAssembly::place_unchecked(const TemplateId tmpl_i
     return core::Result<PartIndex>::ok(index);
 }
 
+bool VehicleAssembly::can_place(const TemplateId tmpl, const i16 gx, const i16 gy,
+                                const u8 rot) const noexcept {
+    const PartTemplate* def = find_template(tmpl);
+    if (def == nullptr || alive_count_ >= kMaxParts) {
+        return false;
+    }
+    const Footprint foot = footprint_of(def->w, def->h, rot);
+    for (u8 i = 0; i < foot.count; ++i) {
+        const auto it = occupancy_.find(hash_cell(static_cast<i16>(gx + foot.cells[i].first),
+                                                  static_cast<i16>(gy + foot.cells[i].second)));
+        if (it != occupancy_.end()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 core::Result<PartIndex> VehicleAssembly::add_root(const TemplateId tmpl, const i16 gx, const i16 gy,
                                                   const u8 rot) {
     const PartTemplate* tmpl_def = find_template(tmpl);
@@ -523,17 +540,27 @@ void VehicleAssembly::adopt(VehicleAssembly&& other) noexcept {
 }
 
 core::Result<u32> VehicleAssembly::jettison_fairings(const std::vector<u32>& parts_to_drop) noexcept {
-    u32 dropped = 0;
+    // Two-phase: validate first so a bad id cannot leave the assembly
+    // half-jettisoned. Dead ids (already detached with another component) are
+    // skipped silently by design; non-fairing live parts reject the whole call.
     for (const u32 id : parts_to_drop) {
         const Part* p = part(id);
         if (!p) {
-            continue;  // already gone (e.g. travelled with a detached component)
+            continue;
         }
         const PartTemplate* tmpl = find_template(p->tmpl);
         if (!tmpl || tmpl->category != PartCategory::Fairing) {
             return core::Result<u32>::failure(ErrorCode::InvalidArgument,
                                               "jettison_fairings expects fairing parts only");
         }
+    }
+    u32 dropped = 0;
+    for (const u32 id : parts_to_drop) {
+        const Part* p = part(id);
+        if (!p) {
+            continue;
+        }
+        const PartTemplate* tmpl = find_template(p->tmpl);
         const Part& part_ref = parts_[id];
         const Footprint foot = footprint_of(tmpl->w, tmpl->h, part_ref.rot);
         for (u8 i = 0; i < foot.count; ++i) {

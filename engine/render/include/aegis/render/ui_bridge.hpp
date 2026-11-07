@@ -7,6 +7,8 @@
 // rendering; order within the list is preserved (later == on top).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 namespace aegis::ui {
@@ -22,7 +24,7 @@ namespace aegis::render {
 
 /// Re-emit `context.items()` as world-space glyph/UI draws anchored to the
 /// camera. Deterministic; allocates nothing.
-void submit_ui(aegis::renderer2d::BatchRenderer& renderer, const aegis::renderer2d::Camera2D& camera,
+AEGIS_API void submit_ui(aegis::renderer2d::BatchRenderer& renderer, const aegis::renderer2d::Camera2D& camera,
                const aegis::ui::UiContext& context) noexcept;
 
 }  // namespace aegis::render

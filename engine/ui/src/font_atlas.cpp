@@ -21,6 +21,8 @@
 #pragma GCC diagnostic pop
 #endif
 
+#include <aegis/core/log.hpp>
+
 #include <cstring>
 
 namespace aegis::ui {
@@ -75,6 +77,7 @@ FontAtlas::FontAtlas() noexcept {
     const int ok_begin = stbtt_PackBegin(&pack, pixels_.data(), static_cast<int>(kFontAtlasWidth),
                                          static_cast<int>(kFontAtlasHeight), 0, 1, nullptr);
     if (ok_begin == 0) {
+        AEGIS_LOG_ERROR("font atlas bake failed (stbtt_PackBegin) — UI text will be blank");
         return;
     }
 
@@ -97,6 +100,7 @@ FontAtlas::FontAtlas() noexcept {
         const int ok_ranges = stbtt_PackFontRanges(&pack, fonts[weight].first, 0, ranges, 2);
         if (ok_ranges == 0) {
             stbtt_PackEnd(&pack);
+            AEGIS_LOG_ERROR("font atlas bake failed (stbtt_PackFontRanges) — UI text will be blank");
             return;
         }
 

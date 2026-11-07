@@ -11,6 +11,8 @@
 // win hit tests.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 #include <aegis/ui/font_atlas.hpp>
 #include <aegis/ui/ui_input.hpp>
@@ -21,7 +23,7 @@
 
 namespace aegis::ui {
 
-struct UiButtonStyle {
+struct AEGIS_API UiButtonStyle {
     UiColor idle{0.16f, 0.19f, 0.26f, 0.92f};
     UiColor hover{0.23f, 0.28f, 0.38f, 0.96f};
     UiColor active{0.13f, 0.42f, 0.58f, 1.0f};
@@ -29,7 +31,7 @@ struct UiButtonStyle {
     UiColor border{0.55f, 0.65f, 0.82f, 0.35f};
 };
 
-class UiContext {
+class AEGIS_API UiContext {
 public:
     /// `font` must outlive the context; pass a shared FontAtlas (or nullptr
     /// while its bake is pending — text() then draws nothing).
@@ -90,9 +92,16 @@ public:
 
     // --- ids -----------------------------------------------------------------
 
-    [[nodiscard]] static core::u64 make_id(std::string_view label) noexcept { return hash_id(label); }
+    /// id 0 is the reserved "no widget" sentinel in click_widget(); fold a
+    /// (astronomically unlikely, but possible) zero hash to a non-zero id so a
+    /// widget can never become unclickable.
+    [[nodiscard]] static core::u64 make_id(std::string_view label) noexcept {
+        const core::u64 id = hash_id(label);
+        return id == 0 ? 1 : id;
+    }
     [[nodiscard]] static core::u64 make_id(std::string_view label, core::u64 index) noexcept {
-        return hash_id_indexed(label, index);
+        const core::u64 id = hash_id_indexed(label, index);
+        return id == 0 ? 1 : id;
     }
 
     // --- output / state -------------------------------------------------------

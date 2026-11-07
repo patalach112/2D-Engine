@@ -1,6 +1,8 @@
 // Aegis2D — device-local arena: one large VkBuffer, best-fit sub-allocation.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -13,7 +15,7 @@
 
 namespace aegis::memory {
 
-struct BufferArenaDesc {
+struct AEGIS_API BufferArenaDesc {
     /// Total bytes of the device-local block.
     core::u64 capacity = 0;
     /// Default: VERTEX|INDEX|STORAGE|TRANSFER_SRC|TRANSFER_DST.
@@ -24,7 +26,7 @@ struct BufferArenaDesc {
 
 class BufferAllocation;
 
-class BufferArena : public core::NonCopyable {
+class AEGIS_API BufferArena : public core::NonCopyable {
 public:
     BufferArena() = default;
     ~BufferArena();
@@ -59,7 +61,7 @@ private:
 
 /// Move-only RAII handle for one arena sub-allocation. Returns the segment to
 /// the arena's free list on destruction (coalescing neighbours).
-class BufferAllocation : public core::NonCopyable {
+class AEGIS_API BufferAllocation : public core::NonCopyable {
 public:
     BufferAllocation() = default;
     ~BufferAllocation();

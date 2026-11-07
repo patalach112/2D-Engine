@@ -7,6 +7,8 @@
 // flight vehicle; staging logic lives in staging.hpp.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/result.hpp>
 #include <aegis/core/types.hpp>
 #include <aegis/parts/part_template.hpp>
@@ -47,7 +49,7 @@ inline constexpr PartIndex kInvalidPart = ~u32{0};
 
 /// 16-byte POD part instance. Tombstoned slots (tmpl == kInvalidTemplate) are
 /// never reused: part indices stay stable for staging and M8 flight dynamics.
-struct Part {
+struct AEGIS_API Part {
     TemplateId tmpl = kInvalidTemplate;
     i16 gx = 0, gy = 0;   ///< grid cell of the rotated footprint origin (bottom-left)
     u8 rot = 0;           ///< low nibble CCW steps, bit 4 = flip
@@ -59,7 +61,7 @@ struct Part {
 static_assert(sizeof(Part) == 16, "Part must stay a 16-byte POD");
 
 /// Rotated footprint of a template under a rotation step.
-struct Footprint {
+struct AEGIS_API Footprint {
     static constexpr std::size_t kMaxCells = kMaxCellsPerPart;
     std::array<std::pair<i16, i16>, kMaxCellsPerPart> cells{};
     u8 count = 0;
@@ -68,13 +70,13 @@ struct Footprint {
 
 /// Transformed geometry of a node (positions in CELL units relative to the
 /// rotated footprint origin).
-[[nodiscard]] Footprint footprint_of(u8 w, u8 h, u8 rot) noexcept;
-[[nodiscard]] std::pair<u8, u8> rotated_dims(u8 w, u8 h, u8 rot) noexcept;
+[[nodiscard]] AEGIS_API Footprint footprint_of(u8 w, u8 h, u8 rot) noexcept;
+[[nodiscard]] AEGIS_API std::pair<u8, u8> rotated_dims(u8 w, u8 h, u8 rot) noexcept;
 /// Node position/normal in cell units, rotated into the part's rotated frame.
-[[nodiscard]] std::pair<std::array<f32, 2>, std::array<f32, 2>> transform_node(const NodeDef& node,
+[[nodiscard]] AEGIS_API std::pair<std::array<f32, 2>, std::array<f32, 2>> transform_node(const NodeDef& node,
                                                                               u8 w, u8 h, u8 rot) noexcept;
 
-struct MassProperties {
+struct AEGIS_API MassProperties {
     f32 dry_mass = 0.0f;
     f32 propellant_mass = 0.0f;
     f32 total_mass = 0.0f;
@@ -86,15 +88,15 @@ struct MassProperties {
 /// Horizontal mirrors y about `axis_wu`.
 enum class Axis : u8 { Vertical, Horizontal };
 
-struct AssemblyIssue {
+struct AEGIS_API AssemblyIssue {
     enum class Kind : u8 { NoCommandPod, UnreachablePart };
     Kind kind = Kind::NoCommandPod;
     PartIndex part = kInvalidPart;
 };
 
-[[nodiscard]] u64 hash_cell(i16 gx, i16 gy) noexcept;
+[[nodiscard]] AEGIS_API u64 hash_cell(i16 gx, i16 gy) noexcept;
 
-class VehicleAssembly {
+class AEGIS_API VehicleAssembly {
 public:
     VehicleAssembly() noexcept = default;
 
@@ -115,6 +117,12 @@ public:
     [[nodiscard]] core::Result<PartIndex> mirror_snap(PartIndex parent, NodeId parent_node,
                                                       TemplateId child, NodeId child_node,
                                                       u8 rot, Axis axis, f32 axis_wu);
+
+    /// Read-only placement probe: would `tmpl` fit at (gx, gy, rot) without
+    /// overlapping a live part? No mutation, no allocation beyond the footprint
+    /// array. Used by the VAB ghost preview every frame. Grid alignment and
+    /// node opposition are the caller's contract (snap() enforces both).
+    [[nodiscard]] bool can_place(TemplateId tmpl, i16 gx, i16 gy, u8 rot) const noexcept;
 
     /// Remove a part and every part that is only attached through it
     /// (subtree cut). Returns the number of parts removed (tombstoned).
@@ -190,6 +198,6 @@ private:
 ///   Sparrow engine / Long-2 tank / MK-1 decoupler / Sparrow engine /
 ///   Short-1 tank / Aegis MK-I pod. Staging is NOT assigned — call auto_assign().
 /// Deterministic; the VAB loads this on first open.
-[[nodiscard]] VehicleAssembly make_demo_rocket() noexcept;
+[[nodiscard]] AEGIS_API VehicleAssembly make_demo_rocket() noexcept;
 
 }  // namespace aegis::parts

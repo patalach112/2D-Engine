@@ -8,6 +8,8 @@
 // Threading: single-threaded, like the rest of the engine.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -21,14 +23,14 @@
 
 namespace aegis::offscreen {
 
-struct OffscreenRendererConfig {
+struct AEGIS_API OffscreenRendererConfig {
     core::u32 width = 1280;
     core::u32 height = 720;
     std::array<core::f32, 4> clear_color = {0.012f, 0.016f, 0.046f, 1.0f};  // deep space
     core::u32 max_instances = 4096;
 };
 
-class OffscreenRenderer : public core::NonCopyable {
+class AEGIS_API OffscreenRenderer : public core::NonCopyable {
 public:
     /// Borrowed handles: `device` and `queue` must outlive the renderer.
     /// `queue` is used both for command submission and pool creation.

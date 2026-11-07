@@ -17,6 +17,8 @@
 // tidy and diff-friendly.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/result.hpp>
 #include <aegis/core/types.hpp>
 
@@ -27,7 +29,7 @@
 
 namespace aegis::serial {
 
-class Json {
+class AEGIS_API Json {
 public:
     enum class Kind : core::u8 { Null, Bool, Number, String, Array, Object };
     using Array = std::vector<Json>;
@@ -55,7 +57,14 @@ public:
 
     void push_back(Json value) noexcept(false) { as_array().push_back(std::move(value)); }
     void set(std::string key, Json value) noexcept(false) {
-        as_object().push_back({std::move(key), std::move(value)});
+        auto& members = as_object();
+        for (auto& member : members) {
+            if (member.first == key) {  // replace in place — no duplicate keys
+                member.second = std::move(value);
+                return;
+            }
+        }
+        members.push_back({std::move(key), std::move(value)});
     }
 
     [[nodiscard]] Kind kind() const noexcept { return kind_; }
@@ -93,12 +102,12 @@ private:
 };
 
 /// Parses a JSON document. On failure the error message carries line:column.
-[[nodiscard]] core::Result<Json> parse_json(std::string_view text) noexcept;
+[[nodiscard]] AEGIS_API core::Result<Json> parse_json(std::string_view text) noexcept;
 
 /// Writes deterministic 2-space-indented JSON (object member order preserved).
-void write_json(std::string& out, const Json& value) noexcept;
+AEGIS_API void write_json(std::string& out, const Json& value) noexcept;
 
 /// Convenience wrapper around write_json.
-[[nodiscard]] std::string to_json(const Json& value) noexcept;
+[[nodiscard]] AEGIS_API std::string to_json(const Json& value) noexcept;
 
 }  // namespace aegis::serial

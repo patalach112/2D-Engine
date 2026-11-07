@@ -1,5 +1,7 @@
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 namespace aegis::renderer2d {
@@ -37,7 +39,7 @@ inline constexpr core::f32 kPartFlagFlip = 4.0f;      ///< mirror the silhouette
 /// Unlike SpriteInstance there is no per-instance softness: silhouettes are
 /// analytic SDFs with fwidth() anti-aliasing, so edges stay crisp at every
 /// zoom level without losing the whole instance to a radial fade term.
-struct PartInstance {
+struct AEGIS_API PartInstance {
     core::f32 x = 0.0f;
     core::f32 y = 0.0f;
     core::f32 width = 1.0f;

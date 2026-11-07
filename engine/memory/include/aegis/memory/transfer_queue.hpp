@@ -1,6 +1,8 @@
 // Aegis2D — blocking transfer queue for load-time uploads and readbacks.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <volk.h>
 
 #include <aegis/core/noncopyable.hpp>
@@ -19,7 +21,7 @@ namespace aegis::memory {
 /// exposes one (ASYNC-DMA overlap with graphics), otherwise to the graphics
 /// queue. All operations are BLOCKING (fence wait) — they are intended for
 /// load time, not per frame.
-class TransferQueue : public core::NonCopyable {
+class AEGIS_API TransferQueue : public core::NonCopyable {
 public:
     TransferQueue() = default;
     ~TransferQueue();

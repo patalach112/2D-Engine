@@ -1,5 +1,7 @@
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <array>
@@ -22,7 +24,7 @@ namespace aegis::renderer2d {
 /// Convention: Vulkan NDC (y-down). World +y maps to clip-space y = -1, so a
 /// right-handed y-up world renders with y up on screen. Callers using the old
 /// OpenGL-style matrix must negate their y expectations accordingly.
-[[nodiscard]] std::array<core::f32, 16> make_orthographic(core::f32 left,
+[[nodiscard]] AEGIS_API std::array<core::f32, 16> make_orthographic(core::f32 left,
                                                           core::f32 right,
                                                           core::f32 bottom,
                                                           core::f32 top,

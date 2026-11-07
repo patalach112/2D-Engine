@@ -1,6 +1,8 @@
 // Aegis2D — value types shared by the UI kernel widgets (Milestone 9).
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 
 #include <array>
@@ -9,11 +11,11 @@
 namespace aegis::ui {
 
 /// Axis-aligned rectangle in pixels, top-left origin (x, y), size (w, h).
-struct UiRect {
+struct AEGIS_API UiRect {
     core::f32 x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
 };
 
-struct UiColor {
+struct AEGIS_API UiColor {
     core::f32 r = 1.0f, g = 1.0f, b = 1.0f, a = 1.0f;
 };
 
@@ -26,7 +28,7 @@ enum class TextAlign : core::u8 { Left, Center, Right };
 
 /// One immediate-mode draw command. The context keeps them in issue order,
 /// which is the painter's draw order. Positions are pixels, top-left origin.
-struct UiDrawItem {
+struct AEGIS_API UiDrawItem {
     enum Kind : core::u8 { Rect, Glyph } kind = Rect;
     UiRect rect{};                    ///< Rect: the rectangle. Glyph: the glyph quad (top-left origin).
     UiColor color{};

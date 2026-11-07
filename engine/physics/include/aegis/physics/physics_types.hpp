@@ -7,6 +7,8 @@
 // single vehicle.
 #pragma once
 
+#include <aegis/export.h>
+
 #include <aegis/core/types.hpp>
 #include <aegis/parts/vehicle_assembly.hpp>
 
@@ -22,7 +24,7 @@ using core::u32;
 inline constexpr f64 kStandardGravity = 9.80665;
 
 /// Minimal f64 2D vector (the engine stays GLM-free).
-struct Vec2d {
+struct AEGIS_API Vec2d {
     f64 x = 0.0, y = 0.0;
 
     constexpr Vec2d operator+(const Vec2d o) const noexcept { return {x + o.x, y + o.y}; }
@@ -50,7 +52,7 @@ struct Vec2d {
 
 /// A single point-mass planet (patched conics and multi-body dynamics are out
 /// of scope for M8). mu == 0 disables gravity (deep-space tests, Δv checks).
-struct CelestialBody {
+struct AEGIS_API CelestialBody {
     f64 mu = 3.986004418e14;          ///< m^3/s^2 — Earth default
     f64 radius = 6.371e6;             ///< m
     f64 atmosphere_density0 = 1.225;  ///< kg/m^3 at the surface (0 == vacuum)
@@ -65,23 +67,23 @@ struct CelestialBody {
     }
 };
 
-struct AeroConfig {
+struct AEGIS_API AeroConfig {
     f64 drag_coefficient = 0.35;
     f64 reference_area = 1.0;    ///< m^2 — constant for M8 (auto-estimate deferred)
     f64 weathercock_gain = 0.0;  ///< N·m per unit sin(α) at the surface; 0 disables
     f64 weathercock_arm = 2.0;   ///< m ahead of CoM (weathercock acts forward of CoM)
 };
 
-struct RotationConfig {
+struct AEGIS_API RotationConfig {
     f64 control_torque = 0.0;    ///< N·m at full pitch deflection (0 = no authority)
     f64 angular_damping = 0.0;   ///< 1/s — ω decays as exp(-d t)
 };
 
-struct ContactConfig {
+struct AEGIS_API ContactConfig {
     f64 impact_threshold = 5.0;  ///< m/s radial — above this a touchdown is an impact
 };
 
-struct VehicleConfig {
+struct AEGIS_API VehicleConfig {
     CelestialBody body;
     AeroConfig aero;
     RotationConfig rotation;
@@ -102,7 +104,7 @@ struct VehicleConfig {
     }
 };
 
-struct FlightState {
+struct AEGIS_API FlightState {
     Vec2d position;            ///< planet-centred, m — the world position of the CoM
     Vec2d velocity;            ///< m/s, inertial (== air-relative; no wind model)
     f64 heading = 1.5707963267948966;  ///< rad — 0 = +x, pi/2 = straight up (y-up)
@@ -125,7 +127,7 @@ enum class FlightEvent : u8 {
 
 /// A stage (or booster) that has been detached and is now a ballistic
 /// free-flyer: gravity-only integration, no thrust/aero/control, no events.
-struct DetachedStage {
+struct AEGIS_API DetachedStage {
     parts::VehicleAssembly assembly;
     FlightState state;
     ContactState contact = ContactState::Airborne;
