@@ -392,6 +392,15 @@ void draw_trajectory(BatchRenderer& renderer, const aegis::renderer2d::Camera2D&
     }
 }
 
+/// Screen-space AP/PE tag next to a marker.
+void draw_apsis_label(aegis::ui::UiContext& ui, const aegis::renderer2d::Camera2D& camera,
+                      const core::f64 angle, const core::f64 radius_abs, const char* tag) noexcept {
+    const core::f32 mx = static_cast<core::f32>(radius_abs * std::cos(angle));
+    const core::f32 my = static_cast<core::f32>(radius_abs * std::sin(angle) - kEarthRadius);
+    const auto [sx, sy] = camera.world_to_screen(mx, my);
+    ui.text(sx + 12.0f, sy - 6.0f, 10.0f, tag, aegis::ui::rgb(0.62f, 0.68f, 0.78f));
+}
+
 void draw_apsis_marker(BatchRenderer& renderer, const aegis::renderer2d::Camera2D& camera,
                        const core::f64 angle, const core::f64 radius_abs, const bool is_apo) noexcept {
     // Position on the apsidal line; world is planet-centred with y-rebase.
@@ -472,6 +481,9 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         draw_trajectory(renderer, camera, state.map_points);
         // Apoapsis / periapsis markers.
         const core::f64 omega = state.map_elements.periapsis_angle;
+        const core::f64 peri_alt_check = session.periapsis_m();
+        const bool suborbital =
+            state.map_elements.eccentricity < 1.0 && peri_alt_check < 0.0;
         if (state.map_elements.eccentricity < 1.0) {
             const core::f64 a = state.map_elements.semi_major_axis;
             const core::f64 e = state.map_elements.eccentricity;
@@ -480,6 +492,33 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
                 draw_apsis_marker(renderer, camera, omega, a * (1.0 - e), false);
             }
         }
+        // Prograde tick: short velocity-vector sprite from the vessel (world space).
+        {
+            const core::f64 vlen = std::hypot(fs.velocity.x, fs.velocity.y);
+            if (vlen > 1.0) {
+                const core::f64 nx = fs.velocity.x / vlen, ny = fs.velocity.y / vlen;
+                const core::f32 wpp = camera.world_per_pixel();
+                const core::f32 len_wu = 34.0f * wpp;
+                const core::f32 offset_wu = 15.0f * wpp;
+                aegis::renderer2d::SpriteInstance tick{};
+                tick.x = static_cast<core::f32>(rocket_x) +
+                         static_cast<core::f32>(nx) * (offset_wu + len_wu * 0.5f);
+                tick.y = static_cast<core::f32>(rocket_y) +
+                         static_cast<core::f32>(ny) * (offset_wu + len_wu * 0.5f);
+                tick.width = len_wu;
+                tick.height = 2.4f * wpp;
+                tick.rotation = static_cast<core::f32>(std::atan2(ny, nx));
+                tick.r = 0.98f;
+                tick.g = 0.90f;
+                tick.b = 0.55f;
+                tick.a = 0.9f;
+                tick.softness = -1.0f;
+                renderer.draw_sprite(tick);
+                const auto [sx, sy] = camera.world_to_screen(tick.x, tick.y);
+                ui.text(sx + 6.0f, sy - 5.0f, 10.0f, "PRO", aegis::ui::rgb(0.98f, 0.90f, 0.55f, 0.85f));
+            }
+        }
+
         // Vessel dot.
         aegis::renderer2d::SpriteInstance vessel{};
         const core::f32 wpp = camera.world_per_pixel();
@@ -494,13 +533,27 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         vessel.softness = -1.0f;
         renderer.draw_sprite(vessel);
 
+        if (state.map_elements.eccentricity < 1.0) {
+            const core::f64 a = state.map_elements.semi_major_axis;
+            const core::f64 e = state.map_elements.eccentricity;
+            draw_apsis_label(ui, camera, omega + 3.14159265358979323846, a * (1.0 + e), "AP");
+            if (a * (1.0 - e) > kEarthRadius) {
+                draw_apsis_label(ui, camera, omega, a * (1.0 - e), "PE");
+            }
+        }
+
         char buffer[160];
         ui.text(22.0f, 16.0f, 22.0f, "ORBITAL MAP", aegis::ui::rgb(0.75f, 0.87f, 1.0f));
         ui.text(22.0f, 46.0f, 12.0f, "PREDICTED KEPLERIAN TRAJECTORY  (M) RETURN", aegis::ui::rgb(0.45f, 0.52f, 0.65f));
         std::snprintf(buffer, sizeof(buffer), "APOAPSIS   %9.1f M", session.apoapsis_m());
         ui.text(22.0f, 78.0f, 14.0f, buffer, aegis::ui::rgb(0.85f, 0.82f, 0.98f));
         std::snprintf(buffer, sizeof(buffer), "PERIAPSIS  %9.1f M", session.periapsis_m());
-        ui.text(22.0f, 100.0f, 14.0f, buffer, aegis::ui::rgb(0.75f, 0.92f, 0.75f));
+        ui.text(22.0f, 100.0f, 14.0f, buffer,
+                suborbital ? aegis::ui::rgb(0.98f, 0.58f, 0.42f) : aegis::ui::rgb(0.75f, 0.92f, 0.75f));
+        if (suborbital) {
+            ui.text(22.0f, 192.0f, 12.0f, "SUBORBITAL — THE TRAJECTORY IMPACTS THE SURFACE",
+                    aegis::ui::rgb(0.98f, 0.62f, 0.38f));
+        }
         std::snprintf(buffer, sizeof(buffer), "ALTITUDE   %9.1f M", altitude);
         ui.text(22.0f, 122.0f, 14.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
         std::snprintf(buffer, sizeof(buffer), "VELOCITY   %9.1f M/S", session.speed_m_s());
@@ -549,7 +602,7 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
     // --- HUD -------------------------------------------------------------
     char buffer[160];
     // Top-left flight data panel.
-    ui.panel(12.0f, 12.0f, 236.0f, 148.0f, aegis::ui::rgb(0.05f, 0.065f, 0.10f, 0.78f),
+    ui.panel(12.0f, 12.0f, 236.0f, 166.0f, aegis::ui::rgb(0.05f, 0.065f, 0.10f, 0.78f),
              aegis::ui::rgb(0.30f, 0.36f, 0.50f, 0.5f));
     std::snprintf(buffer, sizeof(buffer), "T+%6.1f S", now);
     ui.text(24.0f, 20.0f, 13.0f, buffer, aegis::ui::rgb(0.55f, 0.62f, 0.72f));
@@ -559,9 +612,16 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
     ui.text(24.0f, 66.0f, 17.0f, buffer, aegis::ui::rgb(0.90f, 0.94f, 1.0f));
     std::snprintf(buffer, sizeof(buffer), "APO  %8.2f KM", std::max(session.apoapsis_m(), 0.0) * 0.001);
     ui.text(24.0f, 90.0f, 15.0f, buffer, aegis::ui::rgb(0.78f, 0.80f, 0.98f));
-    ui.bar(24.0f, 118.0f, 212.0f, 16.0f, session.propellant_fraction(), aegis::ui::rgb(0.95f, 0.62f, 0.18f),
+    const core::f64 peri_hud = session.periapsis_m();
+    const aegis::orbit::Elements hud_elements = session.orbital_elements();
+    if (hud_elements.eccentricity < 1.0 && peri_hud < 0.0 && altitude > 1.0 && !session.impacted()) {
+        ui.text(24.0f, 108.0f, 10.0f, "IMPACT PREDICTED", aegis::ui::rgb(0.98f, 0.62f, 0.38f));
+    } else if (!session.impacted()) {
+        ui.text(24.0f, 108.0f, 10.0f, "ORBIT", aegis::ui::rgb(0.55f, 0.85f, 0.60f));
+    }
+    ui.bar(24.0f, 132.0f, 212.0f, 14.0f, session.propellant_fraction(), aegis::ui::rgb(0.95f, 0.62f, 0.18f),
            aegis::ui::rgb(0.13f, 0.14f, 0.18f), aegis::ui::rgb(0.5f, 0.45f, 0.3f, 0.6f));
-    ui.text(24.0f, 136.0f, 10.0f, "PROPELLANT", aegis::ui::rgb(0.55f, 0.52f, 0.42f));
+    ui.text(24.0f, 150.0f, 9.0f, "PROPELLANT", aegis::ui::rgb(0.55f, 0.52f, 0.42f));
 
     // Top-right buttons: map toggle + abort.
     const core::u64 map_id = aegis::ui::UiContext::make_id("map_toggle");
