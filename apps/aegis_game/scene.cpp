@@ -104,12 +104,14 @@ void scene_state_init(SceneState& state) noexcept {
     state.map_rig.camera().set_zoom_limits(1.0e-4f, 1.0f);
     state.delete_mode = false;
     state.flight_rig_seeded = false;
+    state.map_seeded = false;
     state.map_cache_time = -1.0e9;
     state.map_points.clear();
 }
 
 void scene_state_reset_flight(SceneState& state) noexcept {
     state.flight_rig_seeded = false;
+    state.map_seeded = false;
     state.map_cache_time = -1.0e9;
     state.map_points.clear();
 }
@@ -270,7 +272,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             else if (item.action == aegis::parts::StageAction::FireDecoupler) ++decouplers;
             else ++fairings;
         }
-        std::snprintf(buffer, sizeof(buffer), "STG %zu  IGN x%u  SEP x%u  FAIR x%u", s, engines, decouplers, fairings);
+        std::snprintf(buffer, sizeof(buffer), "STG%zu I%ux S%ux F%ux", s, engines, decouplers, fairings);
         ui.text(layout.info.x + 12.0f, stage_y, 12.0f, buffer, aegis::ui::rgb(0.75f, 0.82f, 0.90f));
         stage_y += 20.0f;
     }
@@ -392,6 +394,45 @@ void draw_trajectory(BatchRenderer& renderer, const aegis::renderer2d::Camera2D&
     }
 }
 
+/// Deep-space horizon for the orbital map. The game world is a real-scale
+/// Earth (R = 6.371e6 m), so the surface is a straight line across the view
+/// and the curvature is kilometres away — draw the line + atmosphere glow
+/// directly instead of planet-scale discs (their sub-surface limb never
+/// reaches the view, which left the map blank).
+void draw_map_horizon(BatchRenderer& renderer, const aegis::renderer2d::Camera2D& camera) noexcept {
+    const core::f32 vw = camera.visible_world_width();
+    const core::f32 vh = camera.visible_world_height();
+    const core::f32 wpp = camera.world_per_pixel();
+    const core::f32 x = camera.x();
+    auto rect = [&](const core::f32 cy, const core::f32 h, const core::f32 r, const core::f32 g,
+                    const core::f32 b, const core::f32 a) {
+        aegis::renderer2d::SpriteInstance s{};
+        s.x = x;
+        s.y = cy;
+        s.width = vw + 4.0f * wpp;
+        s.height = h + 0.75f * wpp;  // overlap so f32 rounding never opens a seam
+        s.r = r;
+        s.g = g;
+        s.b = b;
+        s.a = a;
+        s.rotation = 0.0f;
+        s.softness = 0.0f;
+        renderer.draw_sprite(s);
+    };
+    // Opaque ground below y == 0 (reaches past the bottom of any allowed view).
+    rect(-vh * 0.5f, vh, 0.075f, 0.11f, 0.09f, 1.0f);
+    // Atmosphere glow: hard bands above the surface, fading out upward.
+    constexpr core::f32 kGlowMeters = 9000.0f;
+    constexpr int kBands = 8;
+    const core::f32 band = kGlowMeters / static_cast<core::f32>(kBands);
+    for (int i = 0; i < kBands; ++i) {
+        const core::f32 t = static_cast<core::f32>(i) / static_cast<core::f32>(kBands);
+        const core::f32 cy = (static_cast<core::f32>(i) + 0.5f) * band;
+        const core::f32 a = 0.34f * std::pow(1.0f - t, 1.6f);
+        rect(cy, band, 0.52f, 0.72f, 0.94f, a);
+    }
+}
+
 /// Screen-space AP/PE tag next to a marker.
 void draw_apsis_label(aegis::ui::UiContext& ui, const aegis::renderer2d::Camera2D& camera,
                       const core::f64 angle, const core::f64 radius_abs, const char* tag) noexcept {
@@ -451,12 +492,22 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
 
     if (session.map_overlay()) {
         update_map_cache(state, *flight, now);
-        // Frame the whole trajectory: target the arc's centroid-ish point.
-        const core::f64 apo = std::max(state.map_apoapsis_alt, 2500.0);
+        // Frame the visible arc: the true apoapsis when bound, else a local-hop
+        // floor (the unbound Keplerian elements are a radial launch artifact).
+        const core::f64 altitude_now = fs.position.y - kEarthRadius;
+        const core::f64 apo = std::max(state.map_apoapsis_alt, altitude_now + 800.0);
         const core::f64 fit_height = apo * 1.45 + 1500.0;
-        state.map_rig.set_target(0.0, rocket_y * 0.30);
-        state.map_rig.set_zoom(static_cast<core::f32>(static_cast<core::f64>(vh) / fit_height));
-        state.map_rig.update(1.0 / 60.0);
+        const core::f32 map_zoom = static_cast<core::f32>(static_cast<core::f64>(vh) / fit_height);
+        if (!state.map_seeded) {
+            // Snap on the first map frame so the drawn pose and the capture
+            // projection agree exactly (no one-frame glide offset).
+            state.map_rig.snap(0.0, rocket_y * 0.30, map_zoom);
+            state.map_seeded = true;
+        } else {
+            state.map_rig.set_target(0.0, rocket_y * 0.30);
+            state.map_rig.set_zoom(map_zoom);
+            state.map_rig.update(1.0 / 60.0);
+        }
     } else {
         // Follow the CoM.
         state.flight_rig.set_target(rocket_x, rocket_y);
@@ -476,14 +527,13 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
 
     if (session.map_overlay()) {
         // --- full-screen map mode ---------------------------------------
-        draw_fullscreen_bands(renderer, camera, {0.004f, 0.006f, 0.016f}, {0.030f, 0.038f, 0.075f}, 1);
-        aegis::render::draw_planet(renderer, 0.0, -kEarthRadius, {});
+        aegis::render::draw_sky(renderer, camera, /*altitude_fraction=*/1.0f, /*star_seed=*/0xA0B1E5u);
+        draw_map_horizon(renderer, camera);
         draw_trajectory(renderer, camera, state.map_points);
         // Apoapsis / periapsis markers.
         const core::f64 omega = state.map_elements.periapsis_angle;
         const core::f64 peri_alt_check = session.periapsis_m();
-        const bool suborbital =
-            state.map_elements.eccentricity < 1.0 && peri_alt_check < 0.0;
+        const bool suborbital = peri_alt_check < 0.0 || state.map_elements.eccentricity >= 1.0;
         if (state.map_elements.eccentricity < 1.0) {
             const core::f64 a = state.map_elements.semi_major_axis;
             const core::f64 e = state.map_elements.eccentricity;
@@ -542,12 +592,23 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
             }
         }
 
+        // For the degenerate radial case the Keplerian elements are numerically
+        // unbound; show a local ballistic estimate instead of a bare -1.0.
+        const bool unbound = state.map_elements.eccentricity >= 1.0;
+        const core::f64 r_len = std::hypot(fs.position.x, fs.position.y);
+        const core::f64 vr = (fs.velocity.x * fs.position.x + fs.velocity.y * fs.position.y) / r_len;
+        const core::f64 h_ang = std::fabs(fs.position.x * fs.velocity.y - fs.position.y * fs.velocity.x);
+        const core::f64 g_local = kEarthMu / (r_len * r_len);
+        const core::f64 ballistic_apo =
+            altitude + (vr > 0.0 ? (vr * vr) / (2.0 * g_local) : 0.0);
+        const bool escaping = unbound && h_ang >= 1.0e3;
+
         char buffer[160];
         ui.text(22.0f, 16.0f, 22.0f, "ORBITAL MAP", aegis::ui::rgb(0.75f, 0.87f, 1.0f));
         ui.text(22.0f, 46.0f, 12.0f, "PREDICTED KEPLERIAN TRAJECTORY  (M) RETURN", aegis::ui::rgb(0.45f, 0.52f, 0.65f));
-        std::snprintf(buffer, sizeof(buffer), "APOAPSIS   %9.1f M", session.apoapsis_m());
+        std::snprintf(buffer, sizeof(buffer), "APOAPSIS   %9.1f M", unbound ? ballistic_apo : session.apoapsis_m());
         ui.text(22.0f, 78.0f, 14.0f, buffer, aegis::ui::rgb(0.85f, 0.82f, 0.98f));
-        std::snprintf(buffer, sizeof(buffer), "PERIAPSIS  %9.1f M", session.periapsis_m());
+        std::snprintf(buffer, sizeof(buffer), "PERIAPSIS  %9.1f M", unbound ? 0.0 : session.periapsis_m());
         ui.text(22.0f, 100.0f, 14.0f, buffer,
                 suborbital ? aegis::ui::rgb(0.98f, 0.58f, 0.42f) : aegis::ui::rgb(0.75f, 0.92f, 0.75f));
         if (suborbital) {
@@ -558,8 +619,10 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         ui.text(22.0f, 122.0f, 14.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
         std::snprintf(buffer, sizeof(buffer), "VELOCITY   %9.1f M/S", session.speed_m_s());
         ui.text(22.0f, 144.0f, 14.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
-        if (state.map_elements.eccentricity >= 1.0) {
+        if (escaping) {
             ui.text(22.0f, 172.0f, 13.0f, "UNBOUND TRAJECTORY", aegis::ui::rgb(0.95f, 0.6f, 0.4f));
+        } else if (unbound) {
+            ui.text(22.0f, 172.0f, 13.0f, "BALLISTIC ARC", aegis::ui::rgb(0.95f, 0.6f, 0.4f));
         } else {
             std::snprintf(buffer, sizeof(buffer), "PERIOD     %9.1f S", state.map_period_s);
             ui.text(22.0f, 172.0f, 14.0f, buffer, aegis::ui::rgb(0.65f, 0.70f, 0.80f));
@@ -685,6 +748,28 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
 aegis::renderer2d::Camera2D& scene_active_camera(SceneState& state, const GameSession& session) noexcept {
     if (session.screen() == GameScreen::Build) {
         return state.vab_rig.camera();
+    }
+    // Seed the flight rig here (not only inside draw_flight) so the projection
+    // computed before the draw pass matches the pose the draw pass will use
+    // on the first frame after launch, abort or map toggle.
+    if (!session.map_overlay() && !state.flight_rig_seeded) {
+        if (const physics::VehicleFlight* flight = session.flight()) {
+            const core::f64 rocket_y = flight->state().position.y - kEarthRadius;
+            state.flight_rig.snap(flight->state().position.x, rocket_y + 3.0, 40.0f);
+            state.flight_rig_seeded = true;
+        }
+    }
+    if (session.map_overlay() && !state.map_seeded) {
+        if (const physics::VehicleFlight* flight = session.flight()) {
+            update_map_cache(state, *flight, 0.0);
+            const core::f64 rocket_y = flight->state().position.y - kEarthRadius;
+            const core::f64 apo = std::max(state.map_apoapsis_alt, rocket_y + 800.0);
+            const core::f64 fit_height = apo * 1.45 + 1500.0;
+            const core::f32 map_zoom = static_cast<core::f32>(
+                static_cast<core::f64>(state.map_rig.camera().viewport_height()) / fit_height);
+            state.map_rig.snap(0.0, rocket_y * 0.30, map_zoom);
+            state.map_seeded = true;
+        }
     }
     return session.map_overlay() ? state.map_rig.camera() : state.flight_rig.camera();
 }

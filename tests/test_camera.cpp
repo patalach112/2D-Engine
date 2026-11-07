@@ -138,9 +138,9 @@ AEGIS_TEST(camera, "view_projection embeds camera position and visible size") {
     // visible_world_width = 640, visible_world_height = 360;
     // bounds: [100-320, 100+320] x [50-180, 50+180]
     expect_near(m[0], 2.0f / 640.0f, 1e-7f, "scale x");
-    expect_near(m[5], 2.0f / 360.0f, 1e-7f, "scale y");
+    expect_near(m[5], -2.0f / 360.0f, 1e-7f, "scale y (Vulkan NDC y-down)");
     expect_near(m[12], -0.3125f, 1e-6f, "translate x = -(right+left)/(right-left)");
-    expect_near(m[13], -0.2777778f, 1e-5f, "translate y = -(top+bottom)/(top-bottom)");
+    expect_near(m[13], 0.2777778f, 1e-5f, "translate y = (top+bottom)/(top-bottom)");
 }
 
 AEGIS_TEST(camera, "line instance is bit-compatible with sprite instance") {

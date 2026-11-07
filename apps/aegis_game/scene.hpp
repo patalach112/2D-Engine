@@ -29,6 +29,7 @@ struct SceneState {
     aegis::ui::UiContext ui;
     bool delete_mode = false;           ///< VAB: click deletes instead of placing
     bool flight_rig_seeded = false;     ///< re-seed camera on launch / reset
+    bool map_seeded = false;            ///< first map frame snaps the framing (no glide)
 
     // Keplerian trajectory cache for the map view (render-side only).
     aegis::orbit::Elements map_elements{};

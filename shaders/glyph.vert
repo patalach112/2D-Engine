@@ -15,11 +15,11 @@ const vec2 kCorners[6] = vec2[6](
 
 layout(location = 0) in vec4 a_rect;
 layout(location = 1) in vec4 a_tint;
-layout(location = 2) in vec2 a_params; // x,y = packed 5x7 row words (bit patterns)
+layout(location = 2) in uvec2 a_params; // x = rows 0-2, y = rows 3-6 (packed bit words)
 
 layout(location = 0) out vec4 v_color;
 layout(location = 1) out vec2 v_local;
-layout(location = 2) out vec2 v_packed;
+flat layout(location = 2) out uvec2 v_packed;
 
 void main() {
     const vec2 corner = kCorners[gl_VertexIndex];
@@ -28,5 +28,5 @@ void main() {
 
     v_color = a_tint;
     v_local = corner * 2.0;          // [-1, 1]
-    v_packed = a_params;
+    v_packed = a_params;             // integer words, no interpolation
 }

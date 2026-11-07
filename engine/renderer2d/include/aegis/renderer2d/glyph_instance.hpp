@@ -4,27 +4,25 @@
 
 #include <array>
 #include <cstdint>
-#include <cstring>
 #include <utility>
 
 namespace aegis::renderer2d {
 
 /// One instance of the bitmap-glyph pipeline (Milestone 9).
 ///
-/// Bit-layout compatible with SpriteInstance (same 40-byte stride, same
-/// attribute locations/formats), which lets glyphs share the 40-byte instance
-/// buffer and the ring-buffer machinery:
+/// Same 40-byte stride and attribute locations as SpriteInstance, which lets
+/// glyphs share the 40-byte instance buffer and ring-buffer machinery. The
+/// packed bitmap travels as INTEGER attribute words (R32G32_UINT), not as
+/// floats: subnormal floats are flushed to zero by real pipelines, which
+/// would erase the bitmap:
 ///
 ///   location 0 = vec4 a_rect   (offset  0)  — xy = world center, zw = cell size
 ///   location 1 = vec4 a_tint   (offset 16)  — rgba color
-///   location 2 = vec2 a_params (offset 32)  — x = rotation bits (unused here),
-///                                               y = bit-packed 5x7 rows
+///   location 2 = uvec2 a_params (offset 32) — x = rows 0-2 (15 bits, LSB first),
+///                                             y = rows 3-6 (20 bits, LSB first)
 ///
-/// A 5x7 glyph is 35 bits. They are packed as two IEEE-float bit patterns
-/// (exact for up to 24 significand bits): word0 (location 2 x) holds rows 0-2
-/// (15 bits, LSB first), word1 (location 2 y) holds rows 3-6 (20 bits, LSB
-/// first). The fragment shader recovers them with floatBitsToUint — no
-/// texture, no memory.
+/// A 5x7 glyph is 35 bits packed into two u32s; the fragment shader reads
+/// them as flat uint varyings — no texture, no memory.
 inline constexpr core::u32 kGlyphRows = 7;     ///< pixel rows
 inline constexpr core::u32 kGlyphColumns = 5;  ///< pixel columns
 inline constexpr core::u32 kGlyphCell = 8;     ///< rendering cell (glyph + margin)
@@ -68,8 +66,8 @@ struct GlyphInstance {
     core::f32 b = 1.0f;
     core::f32 a = 1.0f;
 
-    core::f32 rotation = 0.0f;  ///< bitcast of the packed row word 0 (rows 0-2)
-    core::f32 softness = 0.0f;  ///< bitcast of the packed row word 1 (rows 3-6)
+    core::u32 word_lo = 0;  ///< rows 0-2 (15 bits, LSB first)
+    core::u32 word_hi = 0;  ///< rows 3-6 (20 bits, LSB first)
 };
 
 static_assert(sizeof(GlyphInstance) == 40, "GlyphInstance must stay exactly 40 bytes");
@@ -88,9 +86,8 @@ static_assert(sizeof(GlyphInstance) == 40, "GlyphInstance must stay exactly 40 b
     instance.g = g;
     instance.b = b;
     instance.a = a;
-    core::u32 lo_bits = lo, hi_bits = hi;
-    std::memcpy(&instance.rotation, &lo_bits, sizeof(core::u32));
-    std::memcpy(&instance.softness, &hi_bits, sizeof(core::u32));
+    instance.word_lo = lo;
+    instance.word_hi = hi;
     return instance;
 }
 

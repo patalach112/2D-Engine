@@ -8,7 +8,7 @@
 
 layout(location = 0) in vec4 v_color;
 layout(location = 1) in vec2 v_local;   // [-1, 1]
-layout(location = 2) in vec2 v_packed;  // x = rows 0-2, y = rows 3-6 (bit patterns)
+flat layout(location = 2) in uvec2 v_packed;  // x = rows 0-2, y = rows 3-6
 
 layout(location = 0) out vec4 out_color;
 
@@ -17,8 +17,8 @@ uint row_bits(uint word, uint row) {
 }
 
 void main() {
-    const uint lo = floatBitsToUint(v_packed.x);  // rows 0..2
-    const uint hi = floatBitsToUint(v_packed.y);  // rows 3..6
+    const uint lo = v_packed.x;  // rows 0..2
+    const uint hi = v_packed.y;  // rows 3..6
 
     // Cell coordinates: px in [0, 8) x [0, 8); row 0 is the TOP of the glyph.
     const vec2 cell = vec2(v_local.x * 0.5 + 0.5, 0.5 - v_local.y * 0.5) * 8.0;

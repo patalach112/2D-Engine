@@ -141,10 +141,18 @@ int main(int argc, char** argv) {
         game::scene_state_init(state);
         game::scene_set_viewport(state, static_cast<core::f32>(kWidth), static_cast<core::f32>(kHeight));
 
+        const std::string path = prefix + "aegis_game_" + frame.suffix + ".png";
+        // Warm-up pass: render once against a throwaway capture so rig seeding
+        // and easing settle before the projection is sampled for the kept frame.
+        if (frame.flight) {
+            const renderer2d::Camera2D& warmup_camera = game::scene_active_camera(state, session);
+            (void)offscreen.capture(warmup_camera.view_projection(), [&](renderer2d::BatchRenderer& renderer) {
+                frame.draw(renderer, state, input, session, kWallClockSeconds);
+            });
+        }
         const renderer2d::Camera2D& camera = game::scene_active_camera(state, session);
         const auto projection = camera.view_projection();
 
-        const std::string path = prefix + "aegis_game_" + frame.suffix + ".png";
         auto pixels_result = offscreen.capture(projection, [&](renderer2d::BatchRenderer& renderer) {
             frame.draw(renderer, state, input, session, kWallClockSeconds);
         });

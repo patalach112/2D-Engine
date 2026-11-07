@@ -411,6 +411,12 @@ core::Result<void> BatchRenderer::create_pipelines() {
         {1, 0, kVec4, 16},
         {2, 0, kVec2, 32},
     }};
+    constexpr VkFormat kUVec2 = VK_FORMAT_R32G32_UINT;
+    const std::array<VkVertexInputAttributeDescription, 3> attributes_glyph{{
+        {0, 0, kVec4, 0},
+        {1, 0, kVec4, 16},
+        {2, 0, kUVec2, 32},
+    }};
     const std::array<VkVertexInputAttributeDescription, 5> attributes_part{{
         {0, 0, kVec4, 0},
         {1, 0, kVec4, 16},
@@ -428,7 +434,7 @@ core::Result<void> BatchRenderer::create_pipelines() {
     pipelines_[static_cast<std::size_t>(PrimitiveKind::Line)] = create_pipeline(
         line_vert.value(), line_frag.value(), BlendMode::Normal, sizeof(LineInstance), attributes_40.data(), 3);
     pipelines_[static_cast<std::size_t>(PrimitiveKind::Glyph)] = create_pipeline(
-        glyph_vert.value(), glyph_frag.value(), BlendMode::Normal, sizeof(GlyphInstance), attributes_40.data(), 3);
+        glyph_vert.value(), glyph_frag.value(), BlendMode::Normal, sizeof(GlyphInstance), attributes_glyph.data(), 3);
     pipelines_[static_cast<std::size_t>(PrimitiveKind::Part)] = create_pipeline(
         part_vert.value(), part_frag.value(), BlendMode::Normal, sizeof(PartInstance), attributes_part.data(), 5);
 
