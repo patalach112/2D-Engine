@@ -71,6 +71,9 @@ struct PartTemplate {
     EngineSpec engine{};
     DecouplerSpec decoupler{};
     std::span<const NodeDef> nodes{};
+    /// Stable snake_case identifier for serialization (save/load key). Never
+    /// changes once shipped — display `name` may be reworded freely.
+    const char* key = "";
 
     [[nodiscard]] bool is_engine() const noexcept { return category == PartCategory::Engine; }
     [[nodiscard]] bool is_tank() const noexcept { return category == PartCategory::FuelTank; }
@@ -86,5 +89,9 @@ inline constexpr std::size_t kTemplateCount = 13;
 
 /// Registry lookup; nullptr when id is out of range.
 [[nodiscard]] const PartTemplate* find_template(TemplateId id) noexcept;
+
+/// Registry lookup by stable serialization `key`; nullptr when no template
+/// claims it. Used by save/load — never by rendering or physics.
+[[nodiscard]] const PartTemplate* find_template_by_key(std::string_view key) noexcept;
 
 }  // namespace aegis::parts

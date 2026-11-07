@@ -97,19 +97,19 @@ constexpr std::array<NodeDef, 4> kStrutNodes{{
 // Template table — ids 0..12 (order is the id).
 // ---------------------------------------------------------------------------
 constexpr std::array<PartTemplate, kTemplateCount> kTemplates{{
-    {0, "Aegis MK-I Pod", PartCategory::CommandPod, 1, 1, 800.0f, {}, {}, {}, kPodNodes},
-    {1, "Long-2 Tank", PartCategory::FuelTank, 1, 2, 380.0f, {1400.0f}, {}, {}, kLongTankNodes},
-    {2, "Long-4 Tank", PartCategory::FuelTank, 2, 4, 950.0f, {6200.0f}, {}, {}, kHeavyTankNodes},
-    {3, "Short-1 Tank", PartCategory::FuelTank, 1, 1, 160.0f, {420.0f}, {}, {}, kShortTankNodes},
-    {4, "Sparrow Engine", PartCategory::Engine, 1, 1, 230.0f, {}, {60000.0f, 295.0f}, {}, kSparrowNodes},
-    {5, "Longbow Engine", PartCategory::Engine, 2, 2, 690.0f, {}, {850000.0f, 318.0f}, {}, kLongbowNodes},
-    {6, "Kestrel Engine", PartCategory::Engine, 1, 1, 95.0f, {}, {24000.0f, 265.0f}, {}, kKestrelNodes},
-    {7, "MK-1 Decoupler", PartCategory::Decoupler, 1, 1, 55.0f, {}, {}, {1.5f}, kStandardDecouplerNodes},
-    {8, "Heavy Separator", PartCategory::Decoupler, 1, 2, 190.0f, {}, {}, {2.2f}, kHeavySeparatorNodes},
-    {9, "Radial Separator", PartCategory::Decoupler, 1, 1, 48.0f, {}, {}, {1.2f}, kRadialSeparatorNodes},
-    {10, "Fairing Shell", PartCategory::Fairing, 1, 2, 75.0f, {}, {}, {}, kFairingShellNodes},
-    {11, "Nose Fairing", PartCategory::Fairing, 1, 1, 32.0f, {}, {}, {}, kNoseFairingNodes},
-    {12, "Strut Brace", PartCategory::Strut, 1, 1, 40.0f, {}, {}, {}, kStrutNodes},
+    {0, "Aegis MK-I Pod", PartCategory::CommandPod, 1, 1, 800.0f, {}, {}, {}, kPodNodes, "mk1_pod"},
+    {1, "Long-2 Tank", PartCategory::FuelTank, 1, 2, 380.0f, {1400.0f}, {}, {}, kLongTankNodes, "long_2_tank"},
+    {2, "Long-4 Tank", PartCategory::FuelTank, 2, 4, 950.0f, {6200.0f}, {}, {}, kHeavyTankNodes, "long_4_tank"},
+    {3, "Short-1 Tank", PartCategory::FuelTank, 1, 1, 160.0f, {420.0f}, {}, {}, kShortTankNodes, "short_1_tank"},
+    {4, "Sparrow Engine", PartCategory::Engine, 1, 1, 230.0f, {}, {60000.0f, 295.0f}, {}, kSparrowNodes, "sparrow_engine"},
+    {5, "Longbow Engine", PartCategory::Engine, 2, 2, 690.0f, {}, {850000.0f, 318.0f}, {}, kLongbowNodes, "longbow_engine"},
+    {6, "Kestrel Engine", PartCategory::Engine, 1, 1, 95.0f, {}, {24000.0f, 265.0f}, {}, kKestrelNodes, "kestrel_engine"},
+    {7, "MK-1 Decoupler", PartCategory::Decoupler, 1, 1, 55.0f, {}, {}, {1.5f}, kStandardDecouplerNodes, "mk1_decoupler"},
+    {8, "Heavy Separator", PartCategory::Decoupler, 1, 2, 190.0f, {}, {}, {2.2f}, kHeavySeparatorNodes, "heavy_separator"},
+    {9, "Radial Separator", PartCategory::Decoupler, 1, 1, 48.0f, {}, {}, {1.2f}, kRadialSeparatorNodes, "radial_separator"},
+    {10, "Fairing Shell", PartCategory::Fairing, 1, 2, 75.0f, {}, {}, {}, kFairingShellNodes, "fairing_shell"},
+    {11, "Nose Fairing", PartCategory::Fairing, 1, 1, 32.0f, {}, {}, {}, kNoseFairingNodes, "nose_fairing"},
+    {12, "Strut Brace", PartCategory::Strut, 1, 1, 40.0f, {}, {}, {}, kStrutNodes, "strut_brace"},
 }};
 
 }  // namespace
@@ -121,6 +121,15 @@ const PartTemplate* find_template(const TemplateId id) noexcept {
         return nullptr;
     }
     return &kTemplates[id];
+}
+
+const PartTemplate* find_template_by_key(const std::string_view key) noexcept {
+    for (const PartTemplate& template_def : kTemplates) {
+        if (key == template_def.key) {
+            return &template_def;
+        }
+    }
+    return nullptr;
 }
 
 // Sanity invariants for the built-in table (verified by unit tests as well).
