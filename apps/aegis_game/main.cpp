@@ -197,13 +197,23 @@ int run_windowed() {
     aegis::game::scene_set_viewport(scene, static_cast<float>(fb_width), static_cast<float>(fb_height));
 
     // --- Vulkan instance --------------------------------------------------------
-    u32 glfw_extension_count = 0;
-    const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-
     aegis::vk::InstanceConfig instance_config;
     instance_config.application_name = "Aegis2D Game";
     instance_config.enable_validation = true;
+    // GLFW must be initialised before this call. Empty result means the
+    // windowing build has no Vulkan-surface-capable platform (the glfw Null
+    // platform), so VK_KHR_surface can never be enabled — fail loudly here
+    // instead of with VK_ERROR_EXTENSION_NOT_PRESENT at surface creation.
+    u32 glfw_extension_count = 0;
+    const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
+    if (glfw_extensions == nullptr || glfw_extension_count == 0) {
+        AEGIS_LOG_ERROR("[aegis] glfwGetRequiredInstanceExtensions returned no Vulkan instance "
+                        "extensions — rebuild with the Win32/X11/Wayland platform enabled");
+        return exit_from_failure("required instance extensions");
+    }
+    AEGIS_LOG_INFO("[aegis] glfw requires " << glfw_extension_count << " instance extension(s)");
     for (u32 i = 0; i < glfw_extension_count; ++i) {
+        AEGIS_LOG_INFO("[aegis] glfw instance extension: " << glfw_extensions[i]);
         instance_config.required_extensions.push_back(glfw_extensions[i]);
     }
 

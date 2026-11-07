@@ -40,9 +40,15 @@ core::Result<GlfwSurface> GlfwSurface::create(const Instance& instance, GLFWwind
     VkSurfaceKHR raw = VK_NULL_HANDLE;
     if (const VkResult result = glfwCreateWindowSurface(instance.handle(), window, nullptr, &raw);
         result != VK_SUCCESS) {
-        return core::Result<GlfwSurface>::failure(core::ErrorCode::VulkanFailure,
-                                                  std::string("glfwCreateWindowSurface failed: ") +
-                                                      vk_result_to_string(result),
+        std::string message = std::string("glfwCreateWindowSurface failed: ") + vk_result_to_string(result);
+        if (result == VK_ERROR_EXTENSION_NOT_PRESENT) {
+            // Almost always means the instance was created without the platform
+            // surface extensions (VK_KHR_surface / VK_KHR_win32_surface) — e.g.
+            // glfw built with the Null platform returns no required extensions.
+            message += " (the Vulkan instance is missing VK_KHR_surface / VK_KHR_win32_surface; "
+                       "was glfw built with the Null platform on a display machine?)";
+        }
+        return core::Result<GlfwSurface>::failure(core::ErrorCode::VulkanFailure, std::move(message),
                                                   static_cast<core::i32>(result));
     }
     surface.surface_ = raw;
