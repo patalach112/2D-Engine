@@ -6,9 +6,9 @@
 // aegis_roundtrip / aegis_rocket_dump.
 #include <aegis/orbit/orbit.hpp>
 #include <aegis/orbit/internal.hpp>
-#ifdef AEGIS_HAVE_FORTRAN
+// Included unconditionally: validates the pure-C declarations parse as C++ too
+// (the symbols themselves only exist when the Fortran kernels are enabled).
 #include <aegis/orbit/orbit_c.h>
-#endif
 
 #include "aegis_test.hpp"
 

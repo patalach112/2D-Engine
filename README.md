@@ -271,8 +271,12 @@ This repository's CI environment has **no Vulkan driver and no GPU**. What that 
   gains the three A/B equivalence groups (49 tests total).
 - `ctest` runs 3 cases: `aegis_tests`, `aegis_roundtrip` and `aegis_rocket_dump` —
   both driver-dependent tools **skip cleanly (exit 0)** without a driver.
-- Fortran kernel path is not compile-verified in this container (no gfortran); it is verified
-  by the A/B equivalence tests on machines with `gfortran` installed.
+- Fortran kernel path: the container has no gfortran, so the .f90 itself is line-audited
+  (132-col/literal-kind/continuation checks) rather than compiled. The ABI is machine-checked:
+  `orbit_c.h` parses as C99 (-Wall -Wextra -Werror) and as C++; the `#ifdef AEGIS_HAVE_FORTRAN`
+  dispatch path, out-buffer indexing and the A/B tests are all exercised by a C-ABI stub of the
+  Fortran symbols (identical algorithm) — 16/16 tests pass. The real gfortran compile + link +
+  A/B run happens on machines with gfortran installed.
 - Driver-dependent paths cannot execute without a driver. On a Vulkan 1.3 machine:
   `ctest --preset=debug --output-on-failure` (runs the upload→readback byte-compare and
   renders + writes `rocket_frame.png`), or run the tools directly as shown above.

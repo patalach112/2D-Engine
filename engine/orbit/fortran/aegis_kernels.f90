@@ -57,7 +57,7 @@ contains
         end if
 
         ! Newton-Raphson: E_{n+1} = E_n - (E_n - e sin E_n - M) / (1 - e cos E_n)
-        do iteration = 1, 32
+        do iteration = 1_c_int, 32_c_int
             f_step = E - e * sin(E) - M
             f_prime = 1.0_c_double - e * cos(E)
             step = f_step / f_prime
@@ -135,14 +135,14 @@ contains
         sin_w = sin(omega)
         y_scale = sqrt(1.0_c_double - e * e)
 
-        do i = 0, samples - 1
+        do i = 0_c_int, samples - 1_c_int
             ee = kTwoPi * real(i, c_double) / real(samples, c_double)
             x_orbit = a * (cos(ee) - e)
             y_orbit = a * y_scale * sin(ee)
             wx = cos_w * x_orbit - sin_w * y_orbit
             wy = sin_w * x_orbit + cos_w * y_orbit
-            out_xy(2 * i + 1) = real(wx, c_float)
-            out_xy(2 * i + 2) = real(wy, c_float)
+            out_xy(2_c_int * i + 1_c_int) = real(wx, c_float)
+            out_xy(2_c_int * i + 2_c_int) = real(wy, c_float)
         end do
     end subroutine aegis_sample_path_f32
 

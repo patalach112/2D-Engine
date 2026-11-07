@@ -28,8 +28,10 @@ void aegis_state_at_f64(double semi_major_axis, double eccentricity, double peri
 
 /// Fill `out_xy` with 2*samples floats (x0, y0, x1, y1, ...), sampling one
 /// full revolution evenly in eccentric anomaly. Precondition: samples >= 3 (values <= 2^31).
+/// (Array parameter written unsized — the element count is 2*samples by contract and array
+/// parameters decay to pointers; a parameterized bound is not valid C++.)
 void aegis_sample_path_f32(double semi_major_axis, double eccentricity, double periapsis_angle,
-                           int samples, float out_xy[2 * samples]);
+                           int samples, float out_xy[]);
 
 #ifdef __cplusplus
 }  // extern "C"
