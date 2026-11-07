@@ -83,6 +83,7 @@ add_subdirectory(engine/orbit)       # aegis_orbit      — Keplerian orbital me
 add_subdirectory(engine/parts)       # aegis_parts      — part system + staging (Milestone 7)
 add_subdirectory(engine/physics)     # aegis_physics    — flight dynamics & staging integration (Milestone 8)
 add_subdirectory(engine/ui)          # aegis_ui         — immediate-mode UI kernel + bitmap font (Milestone 9)
+add_subdirectory(engine/render)       # aegis_render     — parts/planet/UI bridges to renderer2d (Milestone 9)
 add_subdirectory(engine/renderer2d)  # aegis_renderer2d — instanced 2D batch renderer (Milestone 3+4)
 add_subdirectory(engine/offscreen)   # aegis_offscreen  — offscreen rendering + PNG writer (Milestone 5)
 
