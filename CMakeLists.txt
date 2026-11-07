@@ -25,6 +25,7 @@ option(AEGIS_WINDOWED     "Build the GLFW windowing backend (auto-detects X11/Wa
 option(AEGIS_BUILD_DEMO   "Build the demo applications"                                ON)
 option(AEGIS_BUILD_TESTS  "Build the unit test suite"                                  ON)
 option(AEGIS_WERROR       "Treat compiler warnings as errors (first-party code)"       OFF)
+option(AEGIS_BUILD_TOOLS  "Build the tools/ command-line utilities (rocket PNG dump)"   ON)
 
 include(FetchContent)
 include(cmake/AegisDeps.cmake)
@@ -43,12 +44,17 @@ add_subdirectory(engine/vk)          # aegis_vk         — Vulkan bootstrap (Mi
 add_subdirectory(engine/memory)      # aegis_memory     — allocators + transfer queue (Milestone 2)
 add_subdirectory(engine/orbit)       # aegis_orbit      — Keplerian orbital mechanics (Milestone 4)
 add_subdirectory(engine/renderer2d)  # aegis_renderer2d — instanced 2D batch renderer (Milestone 3+4)
+add_subdirectory(engine/offscreen)   # aegis_offscreen  — offscreen rendering + PNG writer (Milestone 5)
 
 if(AEGIS_BUILD_DEMO)
     add_subdirectory(apps/aegis_demo)
     add_subdirectory(apps/aegis_roundtrip)
     add_subdirectory(apps/aegis_batch_demo)
     add_subdirectory(apps/aegis_orbit_demo)
+endif()
+
+if(AEGIS_BUILD_TOOLS)
+    add_subdirectory(tools/aegis_rocket_dump)
 endif()
 
 if(AEGIS_BUILD_TESTS)

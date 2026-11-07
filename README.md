@@ -4,13 +4,11 @@ Lightweight, ultra-high-performance 2D game engine for **space flight simulation
 C++20, Vulkan 1.3, clean console-style architecture (low-level core + modular renderer,
 batch rendering, offscreen PNG verification).
 
-> **Status: Milestone 4 — Camera & Orbital Trajectory System** ✅ (builds clean, unit tests green)
+> **Status: Milestone 5 — Test Scene & Offscreen Renderer** ✅ (builds clean, unit tests green)
 >
-> Milestones 1 (Vulkan foundation), 2 (device-local arena, staging ring, TransferQueue),
-> 3 (instanced 2D batch renderer: sprites, particles, UI) and 4 (2D zoom camera, Keplerian
-> orbital mechanics, specialized line-segment pipeline) are implemented and compile-verified
-> here. Runtime Vulkan execution (the `aegis_orbit_demo` solar system scene included)
-> requires a machine with a Vulkan 1.3 driver — see "Verification" below.
+> All five milestones are implemented and compile-verified here. Runtime Vulkan execution
+> (the windowed demos and the `aegis_rocket_dump` PNG capture) requires a machine with a
+> Vulkan 1.3 driver — see "Verification" below.
 
 ## Requirements
 
@@ -35,7 +33,7 @@ cmake --build --preset=debug
 # Force a backend explicitly if auto-detection is wrong for you:
 cmake -S . -B build/manual -DGLFW_BUILD_WAYLAND=ON -DGLFW_BUILD_X11=OFF
 
-# Run unit tests
+# Run unit tests + driverless checks (aegis_roundtrip, aegis_rocket_dump)
 ctest --preset=debug
 
 # Run the demos (windowed)
@@ -45,6 +43,10 @@ ctest --preset=debug
 
 # Milestone 2 verification: arena → staging → transfer queue → readback → byte-compare
 ./build/debug/apps/aegis_roundtrip/aegis_roundtrip   # "ROUNDTRIP VERIFIED" on driver machines
+
+# Milestone 5: render the deterministic rocket scene offscreen and write a PNG
+./build/debug/tools/aegis_rocket_dump/aegis_rocket_dump                  # writes rocket_frame.png
+./build/debug/tools/aegis_rocket_dump/aegis_rocket_dump shot.png         # custom output path
 ```
 
 `aegis_orbit_demo` controls: **scroll** = cursor-anchored zoom · **WASD/arrows** = pan ·
@@ -60,6 +62,8 @@ cmake --preset=ci         # windowed backend + AEGIS_WERROR=ON (warnings-as-erro
 In a container without X11/Wayland dev files the windowed build still compiles end-to-end;
 glfw uses its Null platform and the demos run as bounded smoke tests (120 null frames or
 graceful exit at the point where a Vulkan driver is required) with exit code 0.
+`aegis_rocket_dump` needs no window at all — offscreen rendering works on any headless
+machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 
 ## Milestones
 
@@ -68,8 +72,8 @@ graceful exit at the point where a Vulkan driver is required) with exit code 0.
 | 1 | Foundation & Vulkan Initialization (CMake, volk, glfw, instance, device, swapchain) | ✅ done |
 | 2 | VRAM Allocator & 2D Buffers (vertex/index allocators, TransferQueue) | ✅ done |
 | 3 | Universal 2D Batch Renderer (instanced rockets/particles/UI) | ✅ done |
-| 4 | Camera & Orbital Trajectory System (2D zoom camera, orbit/velocity lines) | ✅ this milestone |
-| 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | pending |
+| 4 | Camera & Orbital Trajectory System (2D zoom camera, orbit/velocity lines) | ✅ done |
+| 5 | Test Scene & Offscreen Renderer (rocket scene → PNG dump) | ✅ done (this milestone) |
 
 ## Repository layout
 
@@ -83,18 +87,21 @@ graceful exit at the point where a Vulkan driver is required) with exit code 0.
 │   │                      #                GLFW surface
 │   ├── memory/            # aegis_memory     — FreeListAllocator (pure), device-local BufferArena,
 │   │                      #                StagingRing (persistently mapped), GpuBuffer, TransferQueue
-│   └── renderer2d/        # aegis_renderer2d — BatchRenderer (instanced quads: sprite, particle, UI,
-│                          #                line), Camera2D (2D zoom camera), make_orthographic
-│                          #                (column-major, GLM-free), BatchStats
+│   ├── renderer2d/        # aegis_renderer2d — BatchRenderer (instanced quads: sprite, particle, UI,
+│   │                      #                line), Camera2D (2D zoom camera), make_orthographic
+│   │                      #                (column-major, GLM-free), BatchStats
+│   └── offscreen/         # aegis_offscreen  — surface-free offscreen renderer (RGBA8 → readback),
+│                          #                PNG writer (miniz DEFLATE + CRC-32)
 ├── apps/
 │   ├── aegis_demo/        # Milestone 1 demo: window + clear loop (dynamic rendering)
 │   ├── aegis_roundtrip/   # Milestone 2 check: upload→readback→byte-compare (registered with ctest)
 │   ├── aegis_batch_demo/  # Milestone 3 demo: rocket + starfield + HUD on the batch renderer
 │   └── aegis_orbit_demo/  # Milestone 4 demo: sun/planet solar system; scroll-zoom camera, orbit path,
 │                          #                velocity vector, pixel-anchored HUD
+├── tools/
+│   └── aegis_rocket_dump/ # Milestone 5 tool: deterministic rocket scene → rocket_frame.png (ctest)
 ├── tests/                 # zero-dependency unit test harness (aegis_test.hpp)
-├── shaders/               # quad.vert|frag (sprites/particles/UI), line.vert|frag (Milestone 4) — GLSL → SPIR-V
-├── tools/                 # reserved (Milestone 5 PNG dump)
+├── shaders/               # quad.vert|frag (sprites/particles/UI), line.vert|frag — GLSL → SPIR-V
 └── CMakePresets.json      # debug / release / ci / headless
 ```
 
@@ -193,18 +200,41 @@ graceful exit at the point where a Vulkan driver is required) with exit code 0.
   it visibly stretches near periapsis), a soft cyan orbit path, scroll-zoom/WASD/follow
   controls and a pixel-anchored HUD (border + panel + speed/radius bars).
 
+## Design notes (M5)
+
+- **`aegis_offscreen`**: a surface-free Vulkan path for headless frame capture. One private
+  `VK_FORMAT_R8G8B8A8_UNORM` image (`COLOR_ATTACHMENT | TRANSFER_SRC`, `DEVICE_LOCAL`),
+  recorded with the same dynamic-rendering + batch-renderer pipeline as the windowed demos;
+  after `vkCmdEndRendering` an image barrier moves it to `TRANSFER_SRC_OPTIMAL` and
+  `vkCmdCopyImageToBuffer` delivers tightly packed RGBA8 into a persistently mapped
+  `HOST_VISIBLE` readback buffer. No window, no surface, no swapchain. The renderer borrows
+  a device and a queue from the caller (headless `vkInstance`/`Device` with
+  `enable_swapchain = false` work — see `tools/aegis_rocket_dump`).
+- **PNG writer** (`aegis::offscreen::write_png`): 8-bit RGBA, no interlace, filter-type-0
+  scanlines, zlib-format IDAT via **miniz** (pinned 3.0.2, FetchContent; nothing linked from
+  zlib), CRC-32 per chunk. Verified by a driver-free unit test that parses the produced PNG
+  (signature, IHDR dimensions, per-chunk CRCs), inflates the IDAT and compares the decoded
+  pixels byte-for-byte — including a custom-stride case.
+- **`aegis_rocket_dump`** renders a fixed, **deterministic** scenario (t = 7 s): a
+  multi-part rocket (nose cone, body, stripe, fins, portholes, engine particles, nozzle
+  glow) on a Keplerian orbit around the sun, composed by the zoom camera to frame both
+  bodies; orbit path polyline, periapsis/apoapsis markers, velocity vector with arrowhead,
+  and a pixel-anchored HUD (speed/radius bars) — writing `rocket_frame.png`.
+  Registered as the `aegis_rocket_dump` ctest case; exits 0 with a clear SKIP message when
+  no Vulkan driver exists.
+
 ## Verification
 
 This repository's CI environment has **no Vulkan driver and no GPU**. What that means:
 
 - Everything compiles warning-free on `debug`, `ci` (`-Werror`) and `headless` presets.
-- All Vulkan-free logic (allocator, Result, logging, orthographic projection, camera,
-  orbital mechanics, …) is unit-tested — 43/43 tests pass (1,963 checks), including
-  conserved orbital energy, Kepler solver round-trips and cursor-anchored zoom stability.
-- Driver-dependent paths cannot execute without a driver. `aegis_roundtrip` performs the
-  full upload → arena → readback → byte-compare verification on any machine with a
-  Vulkan 1.3 driver and prints `ROUNDTRIP VERIFIED` on success — it is registered as the
-  `aegis_roundtrip` ctest case (skips cleanly, exit 0, when no driver exists).
+- All Vulkan-free logic (allocator, Result, logging, projection, camera, orbital mechanics,
+  PNG round trip, …) is unit-tested — 46/46 tests pass (2,036 checks).
+- `ctest` runs 3 cases: `aegis_tests`, `aegis_roundtrip` and `aegis_rocket_dump` —
+  both driver-dependent tools **skip cleanly (exit 0)** without a driver.
+- Driver-dependent paths cannot execute without a driver. On a Vulkan 1.3 machine:
+  `ctest --preset=debug --output-on-failure` (runs the upload→readback byte-compare and
+  renders + writes `rocket_frame.png`), or run the tools directly as shown above.
 
 On your machine: `cmake --preset=debug && cmake --build --preset=debug && ctest --preset=debug --output-on-failure`.
 

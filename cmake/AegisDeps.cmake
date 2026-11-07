@@ -5,6 +5,7 @@
 #   volk          1.3.295     — Vulkan loader bootstrap (loaded via dlopen at runtime)
 #   glfw          3.4         — windowing (optional; Null platform fallback when X11/Wayland absent)
 #   glslang       14.3.0      — build-time GLSL -> SPIR-V compiler (validator binary only; not linked)
+#   miniz         3.0.2       — DEFLATE/CRC-32 for the PNG writer (Milestone 5)
 #
 # FetchContent_Populate is used (instead of MakeAvailable) for projects whose
 # CMake config we don't want to polluting the build; the policy floor is clamped
@@ -16,6 +17,7 @@ set(AEGIS_VULKAN_HEADERS_TAG "v1.3.295" CACHE STRING "Vulkan-Headers git tag")
 set(AEGIS_VOLK_TAG           "1.3.295"  CACHE STRING "volk git tag")
 set(AEGIS_GLFW_TAG           "3.4"      CACHE STRING "glfw git tag")
 set(AEGIS_GLSLANG_TAG        "14.3.0"   CACHE STRING "glslang git tag (build-time shader compiler)")
+set(AEGIS_MINIZ_TAG          "3.0.2"    CACHE STRING "miniz git tag (PNG writer deflate)")
 
 if(POLICY CMP0168)
     cmake_policy(SET CMP0168 OLD)  # FetchContent_Populate is deprecated in CMake >= 3.30
@@ -107,6 +109,33 @@ if(AEGIS_WINDOWED)
     if(NOT TARGET aegis::glfw)
         add_library(aegis::glfw ALIAS glfw)
     endif()
+endif()
+
+# --------------------------------------------------------------------------
+# miniz (3.0.2) — single-purpose DEFLATE/CRC-32 used by the PNG writer.
+# Compiles four C files from the pinned tag; no zlib dependency.
+# --------------------------------------------------------------------------
+FetchContent_Declare(miniz
+    GIT_REPOSITORY https://github.com/richgel999/miniz.git
+    GIT_TAG        ${AEGIS_MINIZ_TAG}
+    GIT_SHALLOW    TRUE)
+FetchContent_Populate(miniz)
+
+if(NOT TARGET aegis_miniz)
+    # miniz 3.x expects a generated miniz_export.h; static build => empty MINIZ_EXPORT
+    # (same recipe as the upstream meson build).
+    set(AEGIS_MINIZ_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/aegis_miniz_gen")
+    file(WRITE "${AEGIS_MINIZ_GEN_DIR}/miniz_export.h"
+         "#pragma once\n#ifndef MINIZ_EXPORT\n#define MINIZ_EXPORT\n#endif\n")
+    add_library(aegis_miniz STATIC
+        ${miniz_SOURCE_DIR}/miniz.c
+        ${miniz_SOURCE_DIR}/miniz_zip.c
+        ${miniz_SOURCE_DIR}/miniz_tinfl.c
+        ${miniz_SOURCE_DIR}/miniz_tdef.c)
+    target_include_directories(aegis_miniz PUBLIC ${miniz_SOURCE_DIR} ${AEGIS_MINIZ_GEN_DIR})
+endif()
+if(NOT TARGET aegis::miniz)
+    add_library(aegis::miniz ALIAS aegis_miniz)
 endif()
 
 # --------------------------------------------------------------------------
