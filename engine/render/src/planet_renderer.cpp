@@ -142,14 +142,25 @@ void draw_ground(aegis::renderer2d::BatchRenderer& renderer, const aegis::render
 }
 
 void draw_launch_mount(aegis::renderer2d::BatchRenderer& renderer) noexcept {
-    // Concrete pad slab + dark mount pedestal — silhouettes at the origin.
-    renderer.draw_sprite(sprite(0.0f, 0.25f, 14.0f, 0.5f, {0.45f, 0.45f, 0.47f, 1.0f}));   // slab
-    renderer.draw_sprite(sprite(0.0f, 0.75f, 4.2f, 0.6f, {0.22f, 0.22f, 0.25f, 1.0f}));     // pedestal base
-    renderer.draw_sprite(sprite(0.0f, 1.35f, 2.2f, 0.7f, {0.16f, 0.16f, 0.19f, 1.0f}));     // hold-down
-    // Service tower silhouette (left of the rocket).
-    renderer.draw_sprite(sprite(-3.4f, 5.0f, 0.9f, 10.0f, {0.18f, 0.19f, 0.22f, 1.0f}));    // mast
-    renderer.draw_sprite(sprite(-2.1f, 8.6f, 2.6f, 0.5f, {0.18f, 0.19f, 0.22f, 1.0f}));     // arm top
-    renderer.draw_sprite(sprite(-2.6f, 4.6f, 1.6f, 0.35f, {0.18f, 0.19f, 0.22f, 1.0f}));    // arm mid
+    // SFS-style flat deck: a wide concrete apron sitting BELOW y == 0 (the
+    // vehicle root sits at y == 0), plus two low hold-down clamps reaching in
+    // from the sides. No tower, no pedestal — the pad must never compete
+    // with the vehicle silhouette.
+    renderer.draw_sprite(sprite(0.0f, -0.50f, 19.0f, 0.24f, {0.128f, 0.134f, 0.164f, 1.0f}));  // apron shadow
+    renderer.draw_sprite(sprite(0.0f, -0.30f, 19.0f, 0.34f, {0.208f, 0.216f, 0.258f, 1.0f}));  // front face
+    renderer.draw_sprite(sprite(0.0f, -0.075f, 19.0f, 0.11f, {0.396f, 0.408f, 0.475f, 1.0f})); // deck top
+    renderer.draw_sprite(sprite(0.0f, -0.015f, 19.0f, 0.03f, {0.62f, 0.63f, 0.71f, 1.0f}));    // edge highlight
+    // Deck end caps (slightly darker, grounds the slab).
+    renderer.draw_sprite(sprite(-9.0f, -0.24f, 1.0f, 0.5f, {0.16f, 0.168f, 0.205f, 1.0f}));
+    renderer.draw_sprite(sprite(9.0f, -0.24f, 1.0f, 0.5f, {0.16f, 0.168f, 0.205f, 1.0f}));
+    // Hold-down clamps: riser blocks at +/-2.45 wu, horizontal arms reaching
+    // toward the vehicle base, amber tips marking the latch line.
+    for (const core::f32 side : {-1.0f, 1.0f}) {
+        renderer.draw_sprite(sprite(side * 2.45f, 0.13f, 0.42f, 0.28f, {0.27f, 0.28f, 0.33f, 1.0f}));
+        renderer.draw_sprite(sprite(side * 2.45f, 0.285f, 0.42f, 0.05f, {0.78f, 0.55f, 0.16f, 1.0f}));
+        renderer.draw_sprite(sprite(side * 1.68f, 0.225f, 1.15f, 0.13f, {0.33f, 0.34f, 0.40f, 1.0f}));
+        renderer.draw_sprite(sprite(side * 1.10f, 0.225f, 0.10f, 0.13f, {0.88f, 0.62f, 0.18f, 1.0f}));
+    }
 }
 
 }  // namespace aegis::render

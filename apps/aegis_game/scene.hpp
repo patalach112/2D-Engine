@@ -31,6 +31,10 @@ struct SceneState {
     aegis::ui::UiContext ui;
     bool delete_mode = false;           ///< VAB: click deletes instead of placing
     bool grid_visible = true;           ///< VAB: G toggles the construction grid
+    int palette_filter = -1;            ///< VAB: -1 = all parts, else PartCategory cast to int
+    core::f32 flash_x = 0.0f;           ///< VAB: world pos of the last "part snapped" flash
+    core::f32 flash_y = 0.0f;
+    core::f64 flash_time = -10.0;       ///< VAB: wall-clock seconds of that snap (for the expanding ring)
     bool flight_rig_seeded = false;     ///< re-seed camera on launch / reset
     bool map_seeded = false;            ///< first map frame snaps the framing (no glide)
 

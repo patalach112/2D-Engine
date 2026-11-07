@@ -64,6 +64,25 @@ void GameSession::recompute_preview() noexcept {
         return;
     }
 
+    // Pad-root mode: the vehicle has no parts yet — the selected part drops
+    // onto the deck as the new root (SFS convention). The ghost tracks the
+    // cursor across the grid; placement itself happens in place_selected().
+    if (build_.parts().empty()) {
+        const auto [dw, dh] = parts::rotated_dims(child->w, child->h, 0);
+        core::f32 gx = std::round(cursor_x_ - static_cast<core::f32>(dw) * 0.5f);
+        gx = std::clamp(gx, -10.0f, 10.0f);
+        preview_.valid = true;
+        preview_.parent_index = parts::kInvalidPart;  // sentinel: this becomes the root
+        preview_.has_target = false;
+        preview_.origin_x = gx + static_cast<core::f32>(dw) * 0.5f;
+        preview_.origin_y = static_cast<core::f32>(dh) * 0.5f;  // sits on the deck (y == 0)
+        preview_.width = static_cast<core::f32>(dw);
+        preview_.height = static_cast<core::f32>(dh);
+        preview_.rot = 0;
+        preview_.node_marker_count = 0;
+        return;
+    }
+
     // Collect every candidate, then pick by validation order: the nearest
     // geometrically-legal placement that actually survives snap() checks
     // (overlap, grid topology). A nearer-but-occupied slot must never shadow
@@ -238,7 +257,22 @@ void GameSession::recompute_preview() noexcept {
 
 bool GameSession::place_selected() noexcept {
     const HoverPreview preview = hover_preview();  // by value — snap() mutates state
-    if (!preview.valid || preview.parent_index == parts::kInvalidPart) {
+    if (!preview.valid) {
+        set_toast("NO SNAP HERE");
+        return false;
+    }
+    if (build_.parts().empty()) {
+        // Pad-root placement (empty vehicle).
+        const core::i16 gx = static_cast<core::i16>(std::lround(preview.origin_x - preview.width * 0.5f));
+        const core::Result<parts::PartIndex> placed = build_.add_root(selected_, gx, 0, 0);
+        if (!placed.has_value()) {
+            set_toast("CANNOT PLACE PART");
+            return false;
+        }
+        bump_build_version();
+        return true;
+    }
+    if (preview.parent_index == parts::kInvalidPart) {
         set_toast("NO SNAP HERE");
         return false;
     }

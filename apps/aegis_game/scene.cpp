@@ -62,19 +62,19 @@ void draw_fullscreen_bands(BatchRenderer& renderer, const Camera2D& camera,
 
 void draw_grid(BatchRenderer& renderer, const Camera2D& camera) noexcept {
     const core::f32 wpp = camera.world_per_pixel();
-    const core::f32 thin = wpp * 1.4f;
-    // 1-wu lines (faint), 5-wu majors, and the vertical build axis (x = 0).
+    const core::f32 thin = wpp * 1.2f;
+    // 1-wu lines (barely there), 5-wu majors, and the vertical build axis (x = 0).
     for (core::i32 x = -10; x <= 10; ++x) {
         const core::f32 fx = static_cast<core::f32>(x);
         const bool major = (x % 5) == 0;
-        renderer.draw_line(fx, -0.5f, fx, 14.5f, 0.62f, 0.70f, 0.86f, major ? 0.22f : 0.09f, thin, 0.0f);
+        renderer.draw_line(fx, -0.6f, fx, 14.5f, 0.70f, 0.78f, 0.95f, major ? 0.13f : 0.05f, thin, 0.0f);
     }
     for (core::i32 y = 0; y <= 14; ++y) {
         const core::f32 fy = static_cast<core::f32>(y);
         const bool major = (y % 5) == 0;
-        renderer.draw_line(-11.0f, fy, 11.0f, fy, 0.62f, 0.70f, 0.86f, major ? 0.20f : 0.08f, thin, 0.0f);
+        renderer.draw_line(-11.0f, fy, 11.0f, fy, 0.70f, 0.78f, 0.95f, major ? 0.12f : 0.045f, thin, 0.0f);
     }
-    renderer.draw_line(0.5f, -0.5f, 0.5f, 14.5f, 1.0f, 0.62f, 0.25f, 0.38f, wpp * 2.0f, 0.0f);
+    renderer.draw_line(0.5f, -0.6f, 0.5f, 14.5f, 1.0f, 0.62f, 0.25f, 0.32f, wpp * 2.0f, 0.0f);
 }
 
 // Shared engineering-dark tokens (VAB + flight HUD + map).
@@ -145,6 +145,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     Camera2D& camera = state.vab_rig.camera();
     const core::f32 vw = camera.viewport_width();
     const core::f32 vh = camera.viewport_height();
+    const float kHeaderH = 52.0f;
 
     // Interaction: wheel zoom; cursor -> world for the ghost.
     if (input.wheel != 0.0f) {
@@ -154,15 +155,14 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     const auto cursor_world = camera.screen_to_world(input.mouse_x, input.mouse_y);
     session.set_cursor_world(cursor_world[0], cursor_world[1]);
 
-    // Layout: anchored panels; the header band and footer frame the workspace.
-    const aegis::ui::UiRect palette{10.0f, 46.0f, 218.0f, vh - 46.0f - 40.0f};
-    const core::f32 info_w = 232.0f;
-    const aegis::ui::UiRect info{vw - info_w - 10.0f, 46.0f, info_w, vh - 46.0f - 40.0f};
-    const aegis::ui::UiRect launch{vw * 0.5f - 190.0f, vh - 88.0f, 380.0f, 54.0f};
+    // Layout: slim top bar, parts palette (left), vessel panel (right).
+    // Everything else is open workspace for the vehicle.
+    const aegis::ui::UiRect palette{14.0f, kHeaderH + 12.0f, 236.0f, vh - kHeaderH - 12.0f - 78.0f};
+    const core::f32 info_w = 272.0f;
+    const aegis::ui::UiRect info{vw - info_w - 14.0f, kHeaderH + 12.0f, info_w, vh - kHeaderH - 12.0f - 14.0f};
     const bool over_palette = point_in(input, palette);
     const bool over_info = point_in(input, info);
-    const bool over_launch = point_in(input, launch);
-    const bool over_panel = over_palette || over_info || over_launch;
+    const bool over_panel = over_palette || over_info;
 
     // --- keyboard -------------------------------------------------------
     if (input.pressed(aegis::ui::UiKey::S)) {
@@ -176,8 +176,12 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     if (input.mouse_pressed && !over_panel) {
         if (state.delete_mode) {
             (void)session.remove_at_cursor();
-        } else {
-            (void)session.place_selected();
+        } else if (session.place_selected()) {
+            // SFS-style snap flash: expanding ring at the freshly placed node.
+            const HoverPreview placed_preview = session.hover_preview();
+            state.flash_x = placed_preview.has_target ? placed_preview.node_x : placed_preview.origin_x;
+            state.flash_y = placed_preview.has_target ? placed_preview.node_y : placed_preview.origin_y;
+            state.flash_time = wall_clock_s;
         }
     }
     if (input.pressed(aegis::ui::UiKey::X)) {
@@ -185,7 +189,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     }
 
     // --- world ---------------------------------------------------------
-    draw_fullscreen_bands(renderer, camera, {0.067f, 0.076f, 0.106f}, {0.032f, 0.037f, 0.058f}, 10);
+    draw_fullscreen_bands(renderer, camera, {0.094f, 0.102f, 0.130f}, {0.038f, 0.043f, 0.062f}, 10);
     if (state.grid_visible) {
         draw_grid(renderer, camera);
     }
@@ -202,6 +206,22 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     }
     part_renderer.draw_assembly(renderer, assembly, 0.0, 0.0, 1.5707963267948966, options);
 
+    // Placement snap flash — expanding ring, ~0.45 s.
+    if (wall_clock_s - state.flash_time < 0.45) {
+        const core::f32 t = static_cast<core::f32>((wall_clock_s - state.flash_time) / 0.45);
+        aegis::renderer2d::SpriteInstance ring{};
+        ring.x = state.flash_x;
+        ring.y = state.flash_y;
+        ring.width = 0.35f + 1.35f * t;
+        ring.height = ring.width;
+        ring.r = 0.55f;
+        ring.g = 1.0f;
+        ring.b = 0.85f;
+        ring.a = (1.0f - t) * 0.95f;
+        ring.softness = -1.0f;
+        renderer.draw_sprite(ring);
+    }
+
     const bool ghost_visible = aegis::parts::find_template(session.selected_template()) != nullptr && !over_panel;
 
     // Ghost of the placement candidate + live snap-point markers.
@@ -217,17 +237,17 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             dot.y = marker.y;
             dot.width = 0.5f;
             dot.height = 0.5f;
-            dot.r = 0.35f;
-            dot.g = 0.85f;
+            dot.r = 0.30f;
+            dot.g = 0.92f;
             dot.b = 1.0f;
-            dot.a = marker.chosen ? 0.0f : 0.55f;
+            dot.a = marker.chosen ? 0.0f : 0.45f;
             dot.softness = -1.0f;  // ring
             renderer.draw_sprite(dot);
         }
         // Snap line from the ghost socket to the chosen node.
         if (preview.has_target) {
             renderer.draw_line(preview.origin_x, preview.origin_y, preview.node_x, preview.node_y,
-                               0.35f, 0.85f, 1.0f, 0.28f, wpp * 1.6f, 0.0f);
+                               0.30f, 0.92f, 1.0f, 0.34f, wpp * 1.6f, 0.0f);
         }
         const core::u8 rot = static_cast<core::u8>(aegis::parts::rot_of(preview.rot));
         const core::f32 ghost_rotation = static_cast<core::f32>(rot) * (kPi * 0.5f);
@@ -248,7 +268,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             dot.a = 0.40f + 0.60f * pulse;
             dot.softness = -1.0f;
             renderer.draw_sprite(dot);
-        } else {
+        } else if (!preview.valid) {
             // Red corner brackets — cannot place here.
             const core::f32 hx = preview.width * 0.5f;
             const core::f32 hy = preview.height * 0.5f;
@@ -267,6 +287,37 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             }
         }
         // Delete-mode: red ring at the cursor.
+        // Pad-root placement (empty vehicle): bright base line on the deck.
+        if (preview.valid && preview.parent_index == parts::kInvalidPart) {
+            renderer.draw_line(preview.origin_x - preview.width * 0.5f, 0.02f,
+                               preview.origin_x + preview.width * 0.5f, 0.02f,
+                               0.35f, 0.95f, 1.0f, 0.9f, wpp * 2.4f, 0.0f);
+        }
+        // Mirror ghost: show the twin that symmetry will place.
+        if (preview.valid && session.symmetry() == Symmetry::MirrorVertical &&
+            preview.parent_index != parts::kInvalidPart) {
+            core::f32 axis_wu = 0.5f;
+            for (const parts::Part& part : assembly.parts()) {
+                if (part.tmpl == parts::kInvalidTemplate) {
+                    continue;
+                }
+                const parts::PartTemplate* ptmpl = aegis::parts::find_template(part.tmpl);
+                if (ptmpl != nullptr && ptmpl->category == parts::PartCategory::CommandPod) {
+                    axis_wu = assembly.part_center_wu(static_cast<core::u32>(&part - &assembly.parts()[0]))[0];
+                    break;
+                }
+            }
+            const core::f32 mirrored_x = 2.0f * axis_wu - preview.origin_x;
+            const core::u8 mirrored_rot = static_cast<core::u8>(preview.rot ^ aegis::parts::kFlipBit);
+            const core::f32 mirrored_rotation =
+                static_cast<core::f32>(aegis::parts::rot_of(mirrored_rot)) * (kPi * 0.5f);
+            core::u32 mirror_flags = static_cast<core::u32>(aegis::renderer2d::kPartFlagGhost);
+            if (aegis::parts::flipped(mirrored_rot)) {
+                mirror_flags |= static_cast<core::u32>(aegis::renderer2d::kPartFlagFlip);
+            }
+            part_renderer.draw_single(renderer, *tmpl, 4001, mirrored_x, preview.origin_y, preview.width,
+                                      preview.height, mirrored_rotation, options, mirror_flags);
+        }
         if (state.delete_mode) {
             aegis::renderer2d::SpriteInstance ring{};
             ring.x = static_cast<core::f32>(cursor_world[0]);
@@ -286,164 +337,271 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     aegis::ui::UiContext& ui = state.ui;
     ui.begin_frame(input, vw, vh);
 
-    // Design tokens — engineering dark mode, high contrast on near-black.
-    const aegis::ui::UiColor c_panel{0.066f, 0.078f, 0.124f, 0.94f};
-    const aegis::ui::UiColor c_panel_hi{0.098f, 0.118f, 0.184f, 0.96f};
-    const aegis::ui::UiColor c_border{0.165f, 0.208f, 0.306f, 0.95f};
+    // Design tokens — SFS-inspired slate, high contrast, one accent.
+    const aegis::ui::UiColor c_panel{0.070f, 0.078f, 0.110f, 0.94f};
+    const aegis::ui::UiColor c_panel_hi{0.118f, 0.133f, 0.192f, 0.96f};
+    const aegis::ui::UiColor c_cell{0.078f, 0.086f, 0.125f, 0.92f};
+    const aegis::ui::UiColor c_cell_hi{0.125f, 0.145f, 0.208f, 0.96f};
+    const aegis::ui::UiColor c_border{0.165f, 0.192f, 0.286f, 0.95f};
     const aegis::ui::UiColor c_accent{0.353f, 0.851f, 1.0f, 1.0f};
     const aegis::ui::UiColor c_accent_dim{0.353f, 0.851f, 1.0f, 0.5f};
-    const aegis::ui::UiColor c_text{0.91f, 0.925f, 0.96f, 1.0f};
-    const aegis::ui::UiColor c_dim{0.55f, 0.60f, 0.70f, 1.0f};
-    const aegis::ui::UiColor c_faint{0.36f, 0.40f, 0.48f, 1.0f};
+    const aegis::ui::UiColor c_accent_fill{0.063f, 0.192f, 0.243f, 0.96f};
+    const aegis::ui::UiColor c_text{0.945f, 0.957f, 0.984f, 1.0f};
+    const aegis::ui::UiColor c_dim{0.651f, 0.694f, 0.784f, 1.0f};
+    const aegis::ui::UiColor c_faint{0.435f, 0.475f, 0.565f, 1.0f};
     const aegis::ui::UiColor c_green{0.24f, 0.84f, 0.55f, 1.0f};
     const aegis::ui::UiColor c_amber{0.96f, 0.70f, 0.26f, 1.0f};
     const aegis::ui::UiColor c_red{0.95f, 0.43f, 0.36f, 1.0f};
-
-    // Header band.
-    ui.fill_rect(0.0f, 0.0f, vw, 36.0f, aegis::ui::rgb(0.043f, 0.051f, 0.086f, 0.97f));
-    ui.fill_rect(0.0f, 35.0f, vw, 1.0f, c_border);
-    // Logo chip: outlined square + A2.
-    ui.rect_outline(12.0f, 8.0f, 20.0f, 20.0f, c_accent, 1.0f);
-    ui.text(22.0f, 11.0f, 13.0f, "A2", c_accent, aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
-    ui.text(40.0f, 9.0f, 15.0f, "AEGIS2D", c_text, aegis::ui::TextAlign::Left, aegis::ui::FontWeight::SemiBold);
-    ui.text(40.0f + ui.text_width_px("AEGIS2D  ", 15.0f, aegis::ui::FontWeight::SemiBold), 11.0f, 10.0f,
-            "/  VEHICLE ASSEMBLY", c_dim);
-
-    // Header center: flight-readiness status pill.
-    const std::string blocker = session.launch_blocker();
-    const bool ready = blocker.empty();
-    const char* pill = ready ? "FLIGHT READY" : "NOT READY";
-    const core::f32 pill_w = ui.text_width_px(pill, 11.0f, aegis::ui::FontWeight::SemiBold) + 34.0f;
-    const core::f32 pill_x = vw * 0.5f - pill_w * 0.5f;
-    const core::f32 pill_fill = ready ? 0.13f : 0.16f;
-    ui.fill_rect(pill_x, 9.0f, pill_w, 18.0f,
-                 ready ? aegis::ui::rgb(0.10f, 0.30f, 0.19f, 0.95f) : aegis::ui::rgb(0.30f, 0.20f, 0.08f, 0.95f));
-    ui.rect_outline(pill_x, 9.0f, pill_w, 18.0f, ready ? c_green : c_amber, 1.0f);
-    ui.fill_rect(pill_x + 8.0f, 14.5f, 7.0f, 7.0f, ready ? c_green : c_amber);
-    ui.text(pill_x + 22.0f, 12.0f, 11.0f, pill, ready ? c_green : c_amber, aegis::ui::TextAlign::Left,
-            aegis::ui::FontWeight::SemiBold);
-    (void)pill_fill;
-
-    ui.text(vw - 14.0f, 8.0f, 9.5f, "GRID 1×1  ·  1 CELL = 1 M", c_faint, aegis::ui::TextAlign::Right);
-    ui.text(vw - 14.0f, 21.0f, 7.5f, "NODE SNAPPING ENABLED", c_accent_dim, aegis::ui::TextAlign::Right);
-
-    // --- Palette panel ---------------------------------------------------
-    ui.panel_frame(palette.x, palette.y, palette.w, palette.h, c_panel, c_border, c_accent_dim);
-    ui.text(palette.x + 14.0f, palette.y + 10.0f, 13.0f, "PART CATALOG", c_text, aegis::ui::TextAlign::Left,
-            aegis::ui::FontWeight::SemiBold);
-    char count_buf[24];
-    std::snprintf(count_buf, sizeof(count_buf), "%zu PARTS", aegis::parts::kTemplateCount);
-    ui.text(palette.x + palette.w - 14.0f, palette.y + 12.0f, 10.0f, count_buf, c_faint,
-            aegis::ui::TextAlign::Right);
-    ui.divider(palette.x + 14.0f, palette.y + 32.0f, palette.w - 28.0f, c_border);
-
-    const float cell_w = 92.0f, cell_h = 52.0f, cell_gap = 5.0f;
-    const float cell_x0 = palette.x + 13.0f, cell_y0 = palette.y + 40.0f;
-    for (core::u32 i = 0; i < aegis::parts::kTemplateCount; ++i) {
-        const std::size_t column = i % 2, row = i / 2;
-        const float bx = cell_x0 + static_cast<float>(column) * (cell_w + cell_gap);
-        const float by = cell_y0 + static_cast<float>(row) * (cell_h + cell_gap);
-        const core::u64 id = aegis::ui::UiContext::make_id("palette", i);
-        const bool selected = session.selected_template() == static_cast<parts::TemplateId>(i);
-        const bool hovered = ui.mouse_inside(bx, by, cell_w, cell_h);
-        if (ui.press_button(id, bx, by, cell_w, cell_h)) {
-            session.select_template(static_cast<parts::TemplateId>(i));
-        }
-        // Cell chrome.
-        ui.fill_rect(bx, by, cell_w, cell_h, selected ? aegis::ui::rgb(0.075f, 0.19f, 0.27f, 0.96f)
-                                        : (hovered ? c_panel_hi : aegis::ui::rgb(0.045f, 0.053f, 0.089f, 0.85f)));
-        ui.rect_outline(bx, by, cell_w, cell_h, selected ? c_accent : c_border, 1.0f);
-        if (selected) {
-            // 4px accent bar on the left edge — classic selected-tool idiom.
-            ui.fill_rect(bx, by + 4.0f, 2.0f, cell_h - 8.0f, c_accent);
-        }
-        ui.text(bx + cell_w * 0.5f, by + cell_h - 13.0f, 8.5f, kTemplateShortName[i],
-                selected ? c_text : c_dim, aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
-    }
-
-    // Palette footer: toggle rows (symmetry / delete mode).
-    const float toggles_y = palette.y + palette.h - 76.0f;
-    ui.divider(palette.x + 14.0f, toggles_y, palette.w - 28.0f, c_border);
-    const auto toggle_row = [&](float y, core::u64 id, const char* label, bool on, aegis::ui::UiColor on_color) {
-        const float rx = palette.x + 14.0f, rw = palette.w - 28.0f, rh = 24.0f;
-        const bool hovered = ui.mouse_inside(rx, y, rw, rh);
-        ui.fill_rect(rx, y, rw, rh, hovered ? c_panel_hi : aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.0f));
-        if (on) {
-            ui.fill_rect(rx, y + 3.0f, 2.0f, rh - 6.0f, on_color);
-        }
-        ui.text(rx + 8.0f, y + 6.0f, 10.0f, label, on ? c_text : c_dim, aegis::ui::TextAlign::Left,
-                aegis::ui::FontWeight::SemiBold);
-        ui.text(rx + rw - 8.0f, y + 6.0f, 10.0f, on ? "ON" : "OFF", on ? on_color : c_faint,
-                aegis::ui::TextAlign::Right, aegis::ui::FontWeight::SemiBold);
-        return ui.press_button(id, rx, y, rw, rh);
-    };
-    {
-        const core::u64 sym_id = aegis::ui::UiContext::make_id("symmetry_row");
-        const bool mirror = session.symmetry() == Symmetry::MirrorVertical;
-        if (toggle_row(toggles_y + 10.0f, sym_id, "SYMMETRY  ·  S", mirror, c_accent)) {
-            session.cycle_symmetry();
-        }
-    }
-    {
-        const core::u64 del_id = aegis::ui::UiContext::make_id("delete_row");
-        if (toggle_row(toggles_y + 38.0f, del_id, "DELETE MODE  ·  X", state.delete_mode, c_amber)) {
-            state.delete_mode = !state.delete_mode;
-        }
-    }
-    ui.text(palette.x + palette.w * 0.5f, palette.y + palette.h - 16.0f, 8.0f,
-            "LMB PLACE  ·  X REMOVE  ·  G GRID", c_faint, aegis::ui::TextAlign::Center);
-
-    // --- Telemetry panel --------------------------------------------------
-    ui.panel_frame(info.x, info.y, info.w, info.h, c_panel, c_border, c_accent_dim);
-    ui.text(info.x + 14.0f, info.y + 10.0f, 13.0f, "FLIGHT TELEMETRY", c_text, aegis::ui::TextAlign::Left,
-            aegis::ui::FontWeight::SemiBold);
-    char craft_buf[64];
-    std::snprintf(craft_buf, sizeof(craft_buf), "CRAFT  %.24s  ·  %u/%u", session.preset_name(),
-                  session.preset_index() + 1, aegis::game::kPresetCount);
-    ui.divider(info.x + 14.0f, info.y + 32.0f, info.w - 28.0f, c_border);
 
     char buffer[192];
     const double mass_kg = session.build_mass_kg();
     const double delta_v = session.delta_v_estimate();
     const double twr = session.twr_estimate();
-    const core::f64 dv_threshold_ok = 1400.0;
-    const core::f64 dv_threshold_good = 2400.0;
-    const aegis::ui::UiColor dv_color = delta_v >= dv_threshold_good ? c_green : (delta_v >= dv_threshold_ok ? c_amber : c_red);
+    const aegis::ui::UiColor dv_color = delta_v >= 2400.0 ? c_green : (delta_v >= 1400.0 ? c_amber : c_red);
     const aegis::ui::UiColor twr_color = twr >= 1.4 ? c_green : (twr >= 1.0 ? c_amber : c_red);
 
-    const auto readout = [&](float y, const char* label, const char* value, aegis::ui::UiColor value_color) {
-        ui.text(info.x + 14.0f, y + 1.0f, 9.0f, label, c_dim);
-        ui.text(info.x + info.w - 14.0f, y - 3.0f, 17.0f, value, value_color, aegis::ui::TextAlign::Right,
+    // ================= HEADER BAR (52 px) ================================
+    ui.fill_rect(0.0f, 0.0f, vw, kHeaderH, aegis::ui::rgb(0.052f, 0.059f, 0.086f, 0.98f));
+    ui.fill_rect(0.0f, kHeaderH - 1.0f, vw, 1.0f, c_border);
+    // Left: logo chip + wordmark.
+    ui.rect_outline(16.0f, 13.0f, 26.0f, 26.0f, c_accent, 1.0f);
+    ui.text(29.0f, 17.0f, 15.0f, "A2", c_accent, aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+    ui.text(50.0f, 15.0f, 17.0f, "AEGIS2D", c_text, aegis::ui::TextAlign::Left, aegis::ui::FontWeight::SemiBold);
+    ui.text(50.0f + ui.text_width_px("AEGIS2D  ", 17.0f, aegis::ui::FontWeight::SemiBold), 18.0f, 12.0f,
+            "/  VEHICLE ASSEMBLY", c_dim);
+    // Center: craft pill.
+    {
+        const char* preset = session.preset_name();
+        char craft_line[72];
+        std::snprintf(craft_line, sizeof(craft_line), "%.28s", preset);
+        char num_buf[16];
+        std::snprintf(num_buf, sizeof(num_buf), "  %u/%u", session.preset_index() + 1, aegis::game::kPresetCount);
+        const float name_w = ui.text_width_px(craft_line, 13.0f, aegis::ui::FontWeight::SemiBold) +
+                             ui.text_width_px(num_buf, 10.0f) + 34.0f;
+        const float px = vw * 0.5f - name_w * 0.5f;
+        ui.fill_rect(px, 11.0f, name_w, 30.0f, aegis::ui::rgb(0.070f, 0.078f, 0.115f, 0.95f));
+        ui.rect_outline(px, 11.0f, name_w, 30.0f, c_border, 1.0f);
+        ui.text(px + 15.0f, 17.0f, 13.0f, craft_line, c_text, aegis::ui::TextAlign::Left,
+                aegis::ui::FontWeight::SemiBold);
+        ui.text(px + 15.0f + ui.text_width_px(craft_line, 13.0f, aegis::ui::FontWeight::SemiBold), 18.5f,
+                10.0f, num_buf, c_faint);
+    }
+    // Right: LAUNCH (SFS convention: top-right, unmissable).
+    const std::string blocker = session.launch_blocker();
+    const bool ready = blocker.empty();
+    {
+        const core::u64 launch_id = aegis::ui::UiContext::make_id("launch");
+        const float lw = 198.0f, lh = 38.0f, lx = vw - 14.0f - lw, ly = 7.0f;
+        const bool hovered = ui.mouse_inside(lx, ly, lw, lh);
+        if (ready) {
+            ui.fill_rect(lx, ly, lw, lh, hovered ? aegis::ui::rgb(0.10f, 0.57f, 0.30f, 1.0f)
+                                                 : aegis::ui::rgb(0.085f, 0.49f, 0.26f, 1.0f));
+            ui.fill_rect(lx + 1.0f, ly + 1.0f, lw - 2.0f, 2.0f, aegis::ui::rgb(0.36f, 0.95f, 0.55f, 0.9f));
+            ui.rect_outline(lx, ly, lw, lh, aegis::ui::rgb(0.16f, 0.72f, 0.35f, 1.0f), 1.0f);
+            ui.text(lx + lw * 0.5f, ly + 9.0f, 20.0f, "LAUNCH", aegis::ui::rgb(0.94f, 1.0f, 0.96f, 1.0f),
+                    aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+        } else {
+            ui.fill_rect(lx, ly, lw, lh, hovered ? aegis::ui::rgb(0.13f, 0.14f, 0.19f, 1.0f)
+                                                 : aegis::ui::rgb(0.095f, 0.103f, 0.142f, 1.0f));
+            ui.rect_outline(lx, ly, lw, lh, aegis::ui::rgb(0.36f, 0.25f, 0.21f, 1.0f), 1.0f);
+            ui.text(lx + lw * 0.5f, ly + 5.0f, 16.0f, "LAUNCH", aegis::ui::rgb(0.42f, 0.45f, 0.53f, 1.0f),
+                    aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+            ui.text(lx + lw * 0.5f, ly + 24.5f, 9.0f, "LOCKED — SEE CHECKS", aegis::ui::rgb(0.82f, 0.55f, 0.30f, 1.0f),
+                    aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+        }
+        if (ui.press_button(launch_id, lx, ly, lw, lh)) {
+            (void)session.launch();  // blocked: surfaces the reason as a toast
+        }
+    }
+
+    // ================= PARTS PALETTE (left) ==============================
+    ui.panel_frame(palette.x, palette.y, palette.w, palette.h, c_panel, c_border, c_accent_dim);
+    ui.text(palette.x + 16.0f, palette.y + 12.0f, 16.0f, "PARTS", c_text, aegis::ui::TextAlign::Left,
+            aegis::ui::FontWeight::SemiBold);
+    std::snprintf(buffer, sizeof(buffer), "%zu", aegis::parts::kTemplateCount);
+    ui.fill_rect(palette.x + palette.w - 44.0f, palette.y + 11.0f, 28.0f, 19.0f, aegis::ui::rgb(0.10f, 0.11f, 0.16f, 1.0f));
+    ui.text(palette.x + palette.w - 30.0f, palette.y + 13.5f, 11.0f, buffer, c_dim, aegis::ui::TextAlign::Center,
+            aegis::ui::FontWeight::SemiBold);
+
+    // Category tabs (SFS-style filter row(s) under the title).
+    struct PaletteTab {
+        const char* label;
+        int filter;  // -1 = ALL, 0..6 = PartCategory, 7 = UTILITY (Strut + RcsBlock)
+    };
+    constexpr PaletteTab kTabs[] = {
+        {"ALL", -1},
+        {"PODS", static_cast<int>(parts::PartCategory::CommandPod)},
+        {"ENGINES", static_cast<int>(parts::PartCategory::Engine)},
+        {"TANKS", static_cast<int>(parts::PartCategory::FuelTank)},
+        {"SEP", static_cast<int>(parts::PartCategory::Decoupler)},
+        {"AERO", static_cast<int>(parts::PartCategory::Fairing)},
+        {"UTILITY", 7},
+    };
+    const auto tab_matches = [&](const parts::PartCategory cat, const int filter) {
+        if (filter == -1) {
+            return true;
+        }
+        if (filter == 7) {
+            return cat == parts::PartCategory::Strut || cat == parts::PartCategory::RcsBlock;
+        }
+        return static_cast<int>(cat) == filter;
+    };
+    {
+        float tab_x = palette.x + 12.0f;
+        float tab_y = palette.y + 40.0f;
+        const float tab_max_x = palette.x + palette.w - 12.0f;
+        for (std::size_t ti = 0; ti < std::size(kTabs); ++ti) {
+            const float tw = ui.text_width_px(kTabs[ti].label, 10.0f, aegis::ui::FontWeight::SemiBold) + 18.0f;
+            if (tab_x + tw > tab_max_x) {
+                tab_x = palette.x + 12.0f;
+                tab_y += 27.0f;
+            }
+            const bool active = state.palette_filter == kTabs[ti].filter;
+            const bool hovered = ui.mouse_inside(tab_x, tab_y, tw, 21.0f);
+            ui.fill_rect(tab_x, tab_y, tw, 21.0f, active ? c_accent_fill : (hovered ? c_cell_hi : c_cell));
+            ui.rect_outline(tab_x, tab_y, tw, 21.0f, active ? c_accent : c_border, 1.0f);
+            ui.text(tab_x + tw * 0.5f, tab_y + 5.0f, 10.0f, kTabs[ti].label, active ? c_accent : c_dim,
+                    aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+            const core::u64 tab_id = aegis::ui::UiContext::make_id("palette_tab", static_cast<core::u32>(ti));
+            if (ui.press_button(tab_id, tab_x, tab_y, tw, 21.0f)) {
+                state.palette_filter = kTabs[ti].filter;
+            }
+            tab_x += tw + 6.0f;
+        }
+    }
+
+    // Visible cells after the category filter.
+    int visible[aegis::parts::kTemplateCount];
+    core::u32 visible_count = 0;
+    for (core::u32 i = 0; i < aegis::parts::kTemplateCount; ++i) {
+        const parts::PartTemplate* tmpl = aegis::parts::find_template(static_cast<parts::TemplateId>(i));
+        if (tmpl != nullptr && tab_matches(tmpl->category, state.palette_filter)) {
+            visible[visible_count++] = static_cast<int>(i);
+        }
+    }
+
+    const float cell_w = 103.0f, cell_h = 50.0f, cell_gap = 6.0f;
+    const float cell_x0 = palette.x + 12.0f, cell_y0 = palette.y + 100.0f;
+    for (core::u32 vi = 0; vi < visible_count; ++vi) {
+        const int i = visible[vi];
+        const std::size_t column = vi % 2, row = vi / 2;
+        const float bx = cell_x0 + static_cast<float>(column) * (cell_w + cell_gap);
+        const float by = cell_y0 + static_cast<float>(row) * (cell_h + cell_gap);
+        if (by + cell_h > palette.y + palette.h - 6.0f) {
+            break;  // grid does not scroll (filter to narrow it) — never clip a cell
+        }
+        const core::u64 id = aegis::ui::UiContext::make_id("palette", static_cast<core::u32>(i));
+        const bool selected = session.selected_template() == static_cast<parts::TemplateId>(i);
+        const bool hovered = ui.mouse_inside(bx, by, cell_w, cell_h);
+        if (ui.press_button(id, bx, by, cell_w, cell_h)) {
+            session.select_template(static_cast<parts::TemplateId>(i));
+        }
+        ui.fill_rect(bx, by, cell_w, cell_h, selected ? c_accent_fill : (hovered ? c_cell_hi : c_cell));
+        ui.rect_outline(bx, by, cell_w, cell_h, selected ? c_accent : c_border, selected ? 1.5f : 1.0f);
+        ui.text(bx + cell_w * 0.5f, by + cell_h - 10.0f, 10.5f, kTemplateShortName[i],
+                selected ? c_text : c_dim, aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+    }
+
+    // ================= TOGGLE CLUSTER (bottom-left) ======================
+    {
+        const float ty = vh - 68.0f;
+        const auto toggle_button = [&](float x, core::u64 id, const char* label, const char* key, bool on,
+                                       aegis::ui::UiColor on_color) {
+            const float bw = 76.0f, bh = 56.0f;
+            const bool hovered = ui.mouse_inside(x, ty, bw, bh);
+            ui.fill_rect(x, ty, bw, bh, on ? c_accent_fill : (hovered ? c_panel_hi : aegis::ui::rgb(0.082f, 0.090f, 0.137f, 0.96f)));
+            ui.rect_outline(x, ty, bw, bh, on ? on_color : c_border, 1.0f);
+            ui.text(x + bw - 7.0f, ty + 5.0f, 9.5f, key, on ? on_color : c_faint, aegis::ui::TextAlign::Right);
+            ui.text(x + bw * 0.5f, ty + bh - 16.0f, 10.0f, label, on ? on_color : c_dim,
+                    aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+            return ui.press_button(id, x, ty, bw, bh);
+        };
+        const core::u64 sym_id = aegis::ui::UiContext::make_id("symmetry_row");
+        const bool mirror = session.symmetry() == Symmetry::MirrorVertical;
+        const float sym_x = 14.0f;
+        if (toggle_button(sym_x, sym_id, "MIRROR", "S", mirror, c_accent)) {
+            session.cycle_symmetry();
+        }
+        // Mirror glyph: two bars + centre axis.
+        {
+            const float gy = ty + 10.0f, gx = sym_x + 38.0f;
+            ui.fill_rect(gx - 1.0f, gy - 2.0f, 2.0f, 22.0f, mirror ? c_accent : c_dim);
+            ui.fill_rect(gx - 14.0f, gy + 1.0f, 7.0f, 15.0f, mirror ? c_accent : c_dim);
+            ui.fill_rect(gx + 7.0f, gy + 1.0f, 7.0f, 15.0f, mirror ? c_accent : c_dim);
+        }
+        const core::u64 del_id = aegis::ui::UiContext::make_id("delete_row");
+        const float del_x = 14.0f + 88.0f;
+        if (toggle_button(del_x, del_id, "DELETE", "X", state.delete_mode, c_amber)) {
+            state.delete_mode = !state.delete_mode;
+        }
+        // Trash glyph.
+        {
+            const float gy = ty + 9.0f, gx = del_x + 38.0f;
+            const aegis::ui::UiColor g = state.delete_mode ? c_amber : c_dim;
+            ui.rect_outline(gx - 9.0f, gy + 5.0f, 18.0f, 14.0f, g, 1.0f);
+            ui.fill_rect(gx - 11.0f, gy + 2.0f, 22.0f, 2.0f, g);
+            ui.fill_rect(gx - 4.0f, gy - 1.0f, 8.0f, 2.0f, g);
+            ui.fill_rect(gx - 4.0f, gy + 8.0f, 2.0f, 8.0f, g);
+            ui.fill_rect(gx + 2.0f, gy + 8.0f, 2.0f, 8.0f, g);
+        }
+        const core::u64 grid_id = aegis::ui::UiContext::make_id("grid_row");
+        const float grid_x = 14.0f + 176.0f;
+        if (toggle_button(grid_x, grid_id, "GRID", "G", state.grid_visible, c_accent)) {
+            state.grid_visible = !state.grid_visible;
+        }
+        // Grid glyph.
+        {
+            const float gy = ty + 8.0f, gx = grid_x + 38.0f;
+            const aegis::ui::UiColor g = state.grid_visible ? c_accent : c_dim;
+            ui.rect_outline(gx - 10.0f, gy, 20.0f, 20.0f, g, 1.0f);
+            ui.fill_rect(gx - 3.5f, gy + 1.0f, 1.5f, 18.0f, g);
+            ui.fill_rect(gx + 2.0f, gy + 1.0f, 1.5f, 18.0f, g);
+            ui.fill_rect(gx - 9.0f, gy + 6.0f, 18.0f, 1.5f, g);
+            ui.fill_rect(gx - 9.0f, gy + 12.5f, 18.0f, 1.5f, g);
+        }
+    }
+
+    // ================= VESSEL PANEL (right) ==============================
+    ui.panel_frame(info.x, info.y, info.w, info.h, c_panel, c_border, c_accent_dim);
+    ui.text(info.x + 16.0f, info.y + 12.0f, 16.0f, "VESSEL", c_text, aegis::ui::TextAlign::Left,
+            aegis::ui::FontWeight::SemiBold);
+    ui.divider(info.x + 16.0f, info.y + 38.0f, info.w - 32.0f, c_border);
+
+    // Big technical readouts — label above value, SFS/KSP style.
+    const auto stat_block = [&](float y, const char* label, const char* value, aegis::ui::UiColor value_color) {
+        ui.text(info.x + 16.0f, y, 10.0f, label, c_dim, aegis::ui::TextAlign::Left,
+                aegis::ui::FontWeight::SemiBold);
+        ui.text(info.x + 16.0f, y + 13.0f, 20.0f, value, value_color, aegis::ui::TextAlign::Left,
                 aegis::ui::FontWeight::SemiBold);
     };
     std::snprintf(buffer, sizeof(buffer), "%.0f KG", mass_kg);
-    readout(info.y + 40.0f, "MASS", buffer, c_text);
+    stat_block(info.y + 46.0f, "MASS", buffer, c_text);
     std::snprintf(buffer, sizeof(buffer), "%.0f M/S", delta_v);
-    readout(info.y + 66.0f, "DELTA-V", buffer, dv_color);
+    stat_block(info.y + 96.0f, "DELTA-V", buffer, dv_color);
     std::snprintf(buffer, sizeof(buffer), "%.2f", twr);
-    readout(info.y + 92.0f, "TWR  (LIFTOFF)", buffer, twr_color);
+    stat_block(info.y + 146.0f, "TWR  ·  LIFTOFF", buffer, twr_color);
     std::snprintf(buffer, sizeof(buffer), "%u", session.part_count());
-    readout(info.y + 118.0f, "PARTS", buffer, c_text);
+    stat_block(info.y + 196.0f, "PARTS", buffer, c_text);
 
-    ui.divider(info.x + 14.0f, info.y + 148.0f, info.w - 28.0f, c_border);
+    ui.divider(info.x + 16.0f, info.y + 246.0f, info.w - 32.0f, c_border);
 
-    // Staging section with quick auto-assign.
-    ui.text(info.x + 14.0f, info.y + 158.0f, 11.0f, "STAGING", c_text, aegis::ui::TextAlign::Left,
+    // Staging — compact, with auto-assign.
+    ui.text(info.x + 16.0f, info.y + 254.0f, 13.0f, "STAGING", c_text, aegis::ui::TextAlign::Left,
             aegis::ui::FontWeight::SemiBold);
-    const core::u64 auto_id = aegis::ui::UiContext::make_id("auto_stage");
     {
-        const float bx = info.x + info.w - 84.0f, by = info.y + 156.0f, bw = 70.0f, bh = 15.0f;
+        const core::u64 auto_id = aegis::ui::UiContext::make_id("auto_stage");
+        const float bx = info.x + info.w - 72.0f, by = info.y + 250.0f, bw = 56.0f, bh = 21.0f;
         const bool hovered = ui.mouse_inside(bx, by, bw, bh);
-        ui.fill_rect(bx, by, bw, bh, hovered ? c_panel_hi : aegis::ui::rgb(0.05f, 0.10f, 0.16f, 0.9f));
-        ui.rect_outline(bx, by, bw, bh, c_accent_dim, 1.0f);
-        ui.text(bx + bw * 0.5f, by + 3.0f, 9.0f, "AUTO", c_accent, aegis::ui::TextAlign::Center,
+        ui.fill_rect(bx, by, bw, bh, hovered ? c_accent_fill : aegis::ui::rgb(0.06f, 0.09f, 0.13f, 1.0f));
+        ui.rect_outline(bx, by, bw, bh, c_accent, 1.0f);
+        ui.text(bx + bw * 0.5f, by + 4.5f, 10.0f, "AUTO", c_accent, aegis::ui::TextAlign::Center,
                 aegis::ui::FontWeight::SemiBold);
         if (ui.press_button(auto_id, bx, by, bw, bh)) {
             session.auto_stage();
         }
     }
     const auto& stages = session.staging().stages();
-    float stage_y = info.y + 180.0f;
+    float stage_y = info.y + 280.0f;
     core::u32 total_staged_engines = 0;
     for (std::size_t s = 0; s < stages.size(); ++s) {
         for (const auto& item : stages[s].items) {
@@ -452,7 +610,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             }
         }
     }
-    for (std::size_t s = 0; s < stages.size() && s < 5; ++s) {
+    for (std::size_t s = 0; s < stages.size() && s < 4; ++s) {
         core::u32 engines = 0, decouplers = 0, fairings = 0;
         for (const auto& item : stages[s].items) {
             if (item.action == aegis::parts::StageAction::IgniteEngine) {
@@ -464,7 +622,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             }
         }
         std::snprintf(buffer, sizeof(buffer), "STG %zu", s + 1);
-        ui.text(info.x + 14.0f, stage_y, 10.0f, buffer, c_text, aegis::ui::TextAlign::Left,
+        ui.text(info.x + 16.0f, stage_y, 12.0f, buffer, c_text, aegis::ui::TextAlign::Left,
                 aegis::ui::FontWeight::SemiBold);
         buffer[0] = '\0';
         std::size_t used = 0;
@@ -475,196 +633,144 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             char part[32];
             std::snprintf(part, sizeof(part), fmt, count);
             used += static_cast<std::size_t>(std::snprintf(buffer + used, sizeof(buffer) - used, "%s%s",
-                                                           used ? "  " : "", part));
+                                                           used ? "   " : "", part));
         };
         chip("%u×ENG", engines);
         chip("%u×SEP", decouplers);
         chip("%u×FRG", fairings);
-        ui.text(info.x + info.w - 14.0f, stage_y, 9.0f, buffer, c_dim, aegis::ui::TextAlign::Right);
-        stage_y += 19.0f;
+        ui.text(info.x + info.w - 16.0f, stage_y + 0.5f, 11.0f, buffer, c_dim, aegis::ui::TextAlign::Right,
+                aegis::ui::FontWeight::SemiBold);
+        stage_y += 25.0f;
     }
-    if (stages.size() > 5) {
-        std::snprintf(buffer, sizeof(buffer), "+%zu MORE", stages.size() - 5);
-        ui.text(info.x + info.w - 14.0f, stage_y, 9.0f, buffer, c_faint, aegis::ui::TextAlign::Right);
-        stage_y += 19.0f;
+    if (stages.size() > 4) {
+        std::snprintf(buffer, sizeof(buffer), "+%zu MORE", stages.size() - 4);
+        ui.text(info.x + info.w - 16.0f, stage_y, 10.0f, buffer, c_faint, aegis::ui::TextAlign::Right);
+        stage_y += 22.0f;
     }
     if (stages.empty()) {
-        ui.text(info.x + 14.0f, stage_y, 9.0f, "NO STAGES — PRESS AUTO", c_amber);
-        stage_y += 19.0f;
+        ui.text(info.x + 16.0f, stage_y, 11.0f, "NO STAGES — PRESS AUTO", c_amber,
+                aegis::ui::TextAlign::Left, aegis::ui::FontWeight::SemiBold);
+        stage_y += 24.0f;
     }
 
-    ui.divider(info.x + 14.0f, stage_y + 6.0f, info.w - 28.0f, c_border);
-
-    // Readiness checklist.
-    const float readiness_y = stage_y + 14.0f;
-    ui.text(info.x + 14.0f, readiness_y, 11.0f, "READINESS", c_text, aegis::ui::TextAlign::Left,
-            aegis::ui::FontWeight::SemiBold);
-    bool has_pod = false;
-    for (const parts::Part& part : assembly.parts()) {
-        if (part.tmpl == parts::kInvalidTemplate) {
-            continue;
-        }
-        const parts::PartTemplate* tmpl = aegis::parts::find_template(part.tmpl);
-        if (tmpl != nullptr && tmpl->category == parts::PartCategory::CommandPod) {
-            has_pod = true;
-            break;
+    // Readiness strip — one loud line instead of a five-row checklist.
+    ui.divider(info.x + 16.0f, stage_y + 8.0f, info.w - 32.0f, c_border);
+    {
+        const float ry = stage_y + 16.0f;
+        const aegis::ui::UiColor chip = ready ? c_green : c_red;
+        ui.fill_rect(info.x + 16.0f, ry + 2.0f, 10.0f, 10.0f, chip);
+        if (ready) {
+            ui.text(info.x + 34.0f, ry, 12.0f, "ALL CHECKS PASS", c_green, aegis::ui::TextAlign::Left,
+                    aegis::ui::FontWeight::SemiBold);
+        } else {
+            char blocker_buf[96];
+            std::snprintf(blocker_buf, sizeof(blocker_buf), "%.34s", blocker.c_str());
+            ui.text(info.x + 34.0f, ry, 11.0f, blocker_buf, c_red, aegis::ui::TextAlign::Left,
+                    aegis::ui::FontWeight::SemiBold);
+            if (blocker.size() > 34) {
+                std::snprintf(blocker_buf, sizeof(blocker_buf), "%.34s", blocker.c_str() + 34);
+                ui.text(info.x + 34.0f, ry + 15.0f, 11.0f, blocker_buf, c_red, aegis::ui::TextAlign::Left,
+                        aegis::ui::FontWeight::SemiBold);
+            }
         }
     }
-    const auto issues = assembly.validate();
-    const bool structure_ok = issues.empty();
-    const bool engines_ok = total_staged_engines > 0;
-    const bool dv_ok = delta_v >= dv_threshold_ok;
-    const bool twr_ok = twr >= 1.0;
 
-    const auto check_row = [&](float y, const char* label, const char* status, bool ok, bool warn) {
-        const aegis::ui::UiColor chip = ok ? c_green : (warn ? c_amber : c_red);
-        ui.fill_rect(info.x + 14.0f, y + 1.0f, 7.0f, 7.0f, chip);
-        ui.text(info.x + 27.0f, y, 9.5f, label, c_dim);
-        ui.text(info.x + info.w - 14.0f, y, 9.5f, status, chip, aegis::ui::TextAlign::Right,
-                aegis::ui::FontWeight::SemiBold);
-    };
-    float check_y = readiness_y + 20.0f;
-    check_row(check_y, "COMMAND POD", has_pod ? "SEATED" : "MISSING", has_pod, false);
-    check_y += 19.0f;
-    std::snprintf(buffer, sizeof(buffer), "%u STAGED", total_staged_engines);
-    check_row(check_y, "ENGINES", engines_ok ? buffer : "NONE", engines_ok, false);
-    check_y += 19.0f;
-    std::snprintf(buffer, sizeof(buffer), "%s", structure_ok ? "NO FAULTS" : "FAULT");
-    check_row(check_y, "STRUCTURE", structure_ok ? buffer : buffer, structure_ok, false);
-    check_y += 19.0f;
-    std::snprintf(buffer, sizeof(buffer), "%.0f M/S", delta_v);
-    check_row(check_y, "DELTA-V (MIN 1400)", buffer, dv_ok, !dv_ok);
-    check_y += 19.0f;
-    std::snprintf(buffer, sizeof(buffer), "%.2f", twr);
-    check_row(check_y, "TWR (MIN 1.00)", buffer, twr_ok, !twr_ok);
-
-    // CRAFT row: presets + clear/reload. Bottom-anchored inside the panel.
-    const float craft_y = info.y + info.h - 88.0f;
-    ui.divider(info.x + 14.0f, craft_y - 8.0f, info.w - 28.0f, c_border);
-    ui.text(info.x + 14.0f, craft_y, 9.5f, craft_buf, c_faint, aegis::ui::TextAlign::Left,
+    // CRAFT presets — pinned to the bottom of the panel.
+    const float craft_y = info.y + info.h - 92.0f;
+    ui.divider(info.x + 16.0f, craft_y - 10.0f, info.w - 32.0f, c_border);
+    ui.text(info.x + 16.0f, craft_y, 10.0f, "CRAFT PRESETS", c_faint, aegis::ui::TextAlign::Left,
             aegis::ui::FontWeight::SemiBold);
     for (core::u32 slot = 0; slot < aegis::game::kPresetCount; ++slot) {
         const core::u64 pid = aegis::ui::UiContext::make_id("preset", slot);
-        const float px = info.x + 14.0f + static_cast<float>(slot) * 40.0f;
-        const float py = craft_y + 14.0f;
+        const float px = info.x + 16.0f + static_cast<float>(slot) * 42.0f;
+        const float py = craft_y + 16.0f;
         char label[8];
         std::snprintf(label, sizeof(label), "%u", slot + 1);
         const bool active = session.preset_index() == slot;
-        const bool hovered = ui.mouse_inside(px, py, 34.0f, 22.0f);
-        ui.fill_rect(px, py, 34.0f, 22.0f, active ? aegis::ui::rgb(0.075f, 0.19f, 0.27f, 0.96f)
-                                            : (hovered ? c_panel_hi : aegis::ui::rgb(0.045f, 0.053f, 0.089f, 0.85f)));
-        ui.rect_outline(px, py, 34.0f, 22.0f, active ? c_accent : c_border, 1.0f);
-        ui.text(px + 17.0f, py + 5.0f, 10.0f, label, active ? c_accent : c_dim, aegis::ui::TextAlign::Center,
+        const bool hovered = ui.mouse_inside(px, py, 36.0f, 24.0f);
+        ui.fill_rect(px, py, 36.0f, 24.0f, active ? c_accent_fill : (hovered ? c_panel_hi : c_cell));
+        ui.rect_outline(px, py, 36.0f, 24.0f, active ? c_accent : c_border, active ? 1.5f : 1.0f);
+        ui.text(px + 18.0f, py + 5.5f, 12.0f, label, active ? c_accent : c_dim, aegis::ui::TextAlign::Center,
                 aegis::ui::FontWeight::SemiBold);
-        if (ui.press_button(pid, px, py, 34.0f, 22.0f)) {
+        if (ui.press_button(pid, px, py, 36.0f, 24.0f)) {
             session.load_preset(slot);
         }
     }
-    const core::u64 demo_id = aegis::ui::UiContext::make_id("demo");
-    const core::u64 clear_id = aegis::ui::UiContext::make_id("clear");
-    const float btn_y = craft_y + 36.0f;
     {
-        const float bw = (info.w - 28.0f - 8.0f) * 0.5f;
-        const bool hovered = ui.mouse_inside(info.x + 14.0f, btn_y, bw, 22.0f);
-        ui.fill_rect(info.x + 14.0f, btn_y, bw, 22.0f, hovered ? c_panel_hi : aegis::ui::rgb(0.10f, 0.09f, 0.12f, 0.9f));
-        ui.rect_outline(info.x + 14.0f, btn_y, bw, 22.0f, aegis::ui::rgb(0.45f, 0.20f, 0.17f, 0.9f), 1.0f);
-        ui.text(info.x + 14.0f + bw * 0.5f, btn_y + 5.0f, 9.5f, "CLEAR", c_red, aegis::ui::TextAlign::Center,
-                aegis::ui::FontWeight::SemiBold);
-        if (ui.press_button(clear_id, info.x + 14.0f, btn_y, bw, 22.0f)) {
-            session.clear_assembly();
-        }
-        const float rx = info.x + 14.0f + bw + 8.0f;
-        const bool hovered2 = ui.mouse_inside(rx, btn_y, bw, 22.0f);
-        ui.fill_rect(rx, btn_y, bw, 22.0f, hovered2 ? c_panel_hi : aegis::ui::rgb(0.045f, 0.053f, 0.089f, 0.9f));
-        ui.rect_outline(rx, btn_y, bw, 22.0f, c_border, 1.0f);
-        ui.text(rx + bw * 0.5f, btn_y + 5.0f, 9.5f, "RELOAD", c_dim, aegis::ui::TextAlign::Center,
-                aegis::ui::FontWeight::SemiBold);
-        if (ui.press_button(demo_id, rx, btn_y, bw, 22.0f)) {
-            session.reset_demo();
-        }
-    }
-
-    // --- Launch hero -----------------------------------------------------
-    if (!ready) {
-        ui.text(vw * 0.5f, launch.y - 21.0f, 10.5f, blocker.c_str(), c_amber, aegis::ui::TextAlign::Center,
-                aegis::ui::FontWeight::SemiBold);
-    } else {
-        ui.text(vw * 0.5f, launch.y - 21.0f, 10.5f, "ALL SYSTEMS GO — VEHICLE WILL FLY", c_green,
-                aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
-    }
-    {
-        const core::u64 launch_id = aegis::ui::UiContext::make_id("launch");
-        const bool hovered = ui.mouse_inside(launch.x, launch.y, launch.w, launch.h);
-        if (ready) {
-            ui.fill_rect(launch.x + 3.0f, launch.y + 4.0f, launch.w, launch.h,
-                         aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.4f));
-            ui.fill_rect(launch.x, launch.y, launch.w, launch.h,
-                         hovered ? aegis::ui::rgb(0.14f, 0.46f, 0.26f, 0.98f)
-                                 : aegis::ui::rgb(0.11f, 0.38f, 0.21f, 0.96f));
-            ui.fill_rect(launch.x, launch.y, launch.w, 1.0f, aegis::ui::rgb(0.42f, 0.95f, 0.61f, 0.8f));  // top edge light
-            ui.rect_outline(launch.x, launch.y, launch.w, launch.h, c_green, 1.0f);
-            ui.text(launch.x + launch.w * 0.5f, launch.y + 15.0f, 21.0f, "L A U N C H",
-                    aegis::ui::rgb(0.88f, 1.0f, 0.91f, 1.0f), aegis::ui::TextAlign::Center,
+        const core::u64 clear_id = aegis::ui::UiContext::make_id("clear");
+        const core::u64 demo_id = aegis::ui::UiContext::make_id("demo");
+        const float by = craft_y + 48.0f;
+        const float bw = (info.w - 32.0f - 8.0f) * 0.5f;
+        {
+            const bool hovered = ui.mouse_inside(info.x + 16.0f, by, bw, 24.0f);
+            ui.fill_rect(info.x + 16.0f, by, bw, 24.0f, hovered ? aegis::ui::rgb(0.14f, 0.10f, 0.10f, 1.0f)
+                                                                : aegis::ui::rgb(0.10f, 0.075f, 0.075f, 0.95f));
+            ui.rect_outline(info.x + 16.0f, by, bw, 24.0f, aegis::ui::rgb(0.45f, 0.22f, 0.18f, 1.0f), 1.0f);
+            ui.text(info.x + 16.0f + bw * 0.5f, by + 6.0f, 11.0f, "CLEAR", c_red, aegis::ui::TextAlign::Center,
                     aegis::ui::FontWeight::SemiBold);
-        } else {
-            ui.fill_rect(launch.x, launch.y, launch.w, launch.h, aegis::ui::rgb(0.085f, 0.088f, 0.115f, 0.96f));
-            ui.rect_outline(launch.x, launch.y, launch.w, launch.h, aegis::ui::rgb(0.35f, 0.24f, 0.17f, 0.9f), 1.0f);
-            ui.text(launch.x + launch.w * 0.5f, launch.y + 10.0f, 17.0f, "L A U N C H", c_faint,
-                    aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
-            ui.text(launch.x + launch.w * 0.5f, launch.y + 33.0f, 8.0f, "LOCKED — RESOLVE READINESS ABOVE",
-                    c_faint, aegis::ui::TextAlign::Center);
+            if (ui.press_button(clear_id, info.x + 16.0f, by, bw, 24.0f)) {
+                session.clear_assembly();
+            }
         }
-        if (ui.press_button(launch_id, launch.x, launch.y, launch.w, launch.h)) {
-            (void)session.launch();
+        {
+            const float rx = info.x + 16.0f + bw + 8.0f;
+            const bool hovered = ui.mouse_inside(rx, by, bw, 24.0f);
+            ui.fill_rect(rx, by, bw, 24.0f, hovered ? c_cell_hi : c_cell);
+            ui.rect_outline(rx, by, bw, 24.0f, c_border, 1.0f);
+            ui.text(rx + bw * 0.5f, by + 6.0f, 11.0f, "RESET DEMO", c_dim, aegis::ui::TextAlign::Center,
+                    aegis::ui::FontWeight::SemiBold);
+            if (ui.press_button(demo_id, rx, by, bw, 24.0f)) {
+                session.reset_demo();
+            }
         }
     }
 
-    // --- Footer ----------------------------------------------------------
-    if (state.delete_mode) {
-        ui.text(16.0f, vh - 18.0f, 9.5f, "DELETE MODE — LMB REMOVES A PART  ·  X / CLICK TOGGLES OFF", c_amber,
-                aegis::ui::TextAlign::Left, aegis::ui::FontWeight::SemiBold);
-    } else {
-        ui.text(16.0f, vh - 18.0f, 9.5f, "WHEEL ZOOM   LMB PLACE   X REMOVE   S SYMMETRY   G GRID   1/2/3 CRAFT",
-                c_faint);
-    }
+    // ================= FOOTER =============================================
     {
-        const char* mode = session.symmetry() == Symmetry::MirrorVertical ? "SYM MIRROR" : "SYM OFF";
+        const char* mode = session.symmetry() == Symmetry::MirrorVertical ? "MIRROR ON" : "MIRROR OFF";
         const char* grid = state.grid_visible ? "GRID ON" : "GRID OFF";
-        char foot[96];
-        std::snprintf(foot, sizeof(foot), "%s  ·  %s  ·  NODE SNAP", mode, grid);
-        ui.text(vw - 16.0f, vh - 18.0f, 9.5f, foot, c_faint, aegis::ui::TextAlign::Right);
+        std::snprintf(buffer, sizeof(buffer), "WHEEL ZOOM    LMB PLACE    X REMOVE    1/2/3 PRESETS    %s    %s",
+                      mode, grid);
+        ui.text(vw * 0.5f, vh - 15.0f, 10.0f, buffer, c_faint, aegis::ui::TextAlign::Center);
     }
 
     // Toast line.
     if (wall_clock_s - session.toast_time() < 3.0 && !session.toast().empty()) {
-        ui.text(vw * 0.5f, 44.0f, 12.0f, session.toast().c_str(), aegis::ui::rgb(0.95f, 0.85f, 0.45f),
-                aegis::ui::TextAlign::Center);
+        ui.text(vw * 0.5f, 66.0f, 13.0f, session.toast().c_str(), aegis::ui::rgb(0.98f, 0.87f, 0.45f, 1.0f),
+                aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
     }
 
     aegis::render::submit_ui(renderer, camera, ui);
 
     // Palette part icons — drawn after the UI so they sit ON the buttons.
-    for (core::u32 i = 0; i < aegis::parts::kTemplateCount; ++i) {
+    for (core::u32 vi = 0; vi < visible_count; ++vi) {
+        const int i = visible[vi];
         const aegis::parts::PartTemplate* tmpl = aegis::parts::find_template(static_cast<parts::TemplateId>(i));
         if (tmpl == nullptr) {
             continue;
         }
-        const std::size_t column = i % 2, row = i / 2;
-        const float cx = cell_x0 + static_cast<float>(column) * (cell_w + cell_gap) + cell_w * 0.5f;
-        const float cy = cell_y0 + static_cast<float>(row) * (cell_h + cell_gap) + (cell_h - 14.0f) * 0.5f;
+        const std::size_t column = vi % 2, row = vi / 2;
+        const float bx = cell_x0 + static_cast<float>(column) * (cell_w + cell_gap);
+        const float by = cell_y0 + static_cast<float>(row) * (cell_h + cell_gap);
+        if (by + cell_h > palette.y + palette.h - 6.0f) {
+            break;
+        }
+        const float cx = bx + cell_w * 0.5f;
+        const float cy = by + 15.0f;
         const auto world = camera.screen_to_world(cx, cy);
         const core::f32 wpp = camera.world_per_pixel();
         core::f32 iw = static_cast<core::f32>(tmpl->h) > 0.0f
-                           ? 30.0f * (static_cast<core::f32>(tmpl->w) / static_cast<core::f32>(tmpl->h)) * wpp
-                           : 30.0f * wpp;
-        core::f32 ih = 30.0f * wpp;
-        const core::f32 max_w = (cell_w - 20.0f) * wpp;
+                           ? 26.0f * (static_cast<core::f32>(tmpl->w) / static_cast<core::f32>(tmpl->h)) * wpp
+                           : 26.0f * wpp;
+        core::f32 ih = 26.0f * wpp;
+        const core::f32 max_w = (cell_w - 24.0f) * wpp;
         if (iw > max_w) {
             iw = max_w;
             ih = iw * (static_cast<core::f32>(tmpl->h) / static_cast<core::f32>(tmpl->w));
         }
-        part_renderer.draw_single(renderer, *tmpl, 3000 + i, static_cast<core::f32>(world[0]),
-                                  static_cast<core::f32>(world[1]), iw, ih, 0.0f, options, 0u);
+        part_renderer.draw_single(renderer, *tmpl, 3000 + static_cast<core::u32>(i),
+                                  static_cast<core::f32>(world[0]), static_cast<core::f32>(world[1]), iw, ih,
+                                  0.0f, options, 0u);
     }
 }
 
