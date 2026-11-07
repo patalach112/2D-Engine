@@ -15,6 +15,8 @@ enum class PartKind : core::u32 {
     Separator = 5,
     Fairing = 6,
     Strut = 7,
+    RcsBlock = 8,
+    LandingLeg = 9,
 };
 
 /// Bit flags for a part instance.

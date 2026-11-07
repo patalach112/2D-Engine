@@ -86,6 +86,22 @@ constexpr std::array<NodeDef, 1> kNoseFairingNodes{{
     {0, Bottom, 0.5f, 0.0f, 0.0f, -1.0f},
 }};
 
+constexpr std::array<NodeDef, 4> kRcsNodes{{
+    {0, Top, 0.5f, 1.0f, 0.0f, 1.0f},
+    {1, Bottom, 0.5f, 0.0f, 0.0f, -1.0f},
+    {2, Lateral, 0.0f, 0.5f, -1.0f, 0.0f},
+    {3, Lateral, 1.0f, 0.5f, 1.0f, 0.0f},
+}};
+
+// Landing leg: attaches along the body (lateral hardpoints) or between stacked
+// stages (top/bottom). Pure mass — no flight effect beyond mass/inertia.
+constexpr std::array<NodeDef, 4> kLandingLegNodes{{
+    {0, Top, 0.5f, 1.0f, 0.0f, 1.0f},
+    {1, Bottom, 0.5f, 0.0f, 0.0f, -1.0f},
+    {2, Lateral, 0.0f, 0.5f, -1.0f, 0.0f},
+    {3, Lateral, 1.0f, 0.5f, 1.0f, 0.0f},
+}};
+
 constexpr std::array<NodeDef, 4> kStrutNodes{{
     {0, Top, 0.5f, 1.0f, 0.0f, 1.0f},
     {1, Bottom, 0.5f, 0.0f, 0.0f, -1.0f},
@@ -94,22 +110,25 @@ constexpr std::array<NodeDef, 4> kStrutNodes{{
 }};
 
 // ---------------------------------------------------------------------------
-// Template table — ids 0..12 (order is the id).
+// Template table — ids 0..15 (order is the id).
 // ---------------------------------------------------------------------------
 constexpr std::array<PartTemplate, kTemplateCount> kTemplates{{
-    {0, "Aegis MK-I Pod", PartCategory::CommandPod, 1, 1, 800.0f, {}, {}, {}, kPodNodes, "mk1_pod"},
-    {1, "Long-2 Tank", PartCategory::FuelTank, 1, 2, 380.0f, {1400.0f}, {}, {}, kLongTankNodes, "long_2_tank"},
-    {2, "Long-4 Tank", PartCategory::FuelTank, 2, 4, 950.0f, {6200.0f}, {}, {}, kHeavyTankNodes, "long_4_tank"},
-    {3, "Short-1 Tank", PartCategory::FuelTank, 1, 1, 160.0f, {420.0f}, {}, {}, kShortTankNodes, "short_1_tank"},
-    {4, "Sparrow Engine", PartCategory::Engine, 1, 1, 230.0f, {}, {60000.0f, 295.0f}, {}, kSparrowNodes, "sparrow_engine"},
-    {5, "Longbow Engine", PartCategory::Engine, 2, 2, 690.0f, {}, {850000.0f, 318.0f}, {}, kLongbowNodes, "longbow_engine"},
-    {6, "Kestrel Engine", PartCategory::Engine, 1, 1, 95.0f, {}, {24000.0f, 265.0f}, {}, kKestrelNodes, "kestrel_engine"},
-    {7, "MK-1 Decoupler", PartCategory::Decoupler, 1, 1, 55.0f, {}, {}, {1.5f}, kStandardDecouplerNodes, "mk1_decoupler"},
-    {8, "Heavy Separator", PartCategory::Decoupler, 1, 2, 190.0f, {}, {}, {2.2f}, kHeavySeparatorNodes, "heavy_separator"},
-    {9, "Radial Separator", PartCategory::Decoupler, 1, 1, 48.0f, {}, {}, {1.2f}, kRadialSeparatorNodes, "radial_separator"},
-    {10, "Fairing Shell", PartCategory::Fairing, 1, 2, 75.0f, {}, {}, {}, kFairingShellNodes, "fairing_shell"},
-    {11, "Nose Fairing", PartCategory::Fairing, 1, 1, 32.0f, {}, {}, {}, kNoseFairingNodes, "nose_fairing"},
-    {12, "Strut Brace", PartCategory::Strut, 1, 1, 40.0f, {}, {}, {}, kStrutNodes, "strut_brace"},
+    {0, "Aegis MK-I Pod", PartCategory::CommandPod, 1, 1, 800.0f, {}, {}, {}, {}, kPodNodes, "mk1_pod"},
+    {1, "Long-2 Tank", PartCategory::FuelTank, 1, 2, 380.0f, {1400.0f}, {}, {}, {}, kLongTankNodes, "long_2_tank"},
+    {2, "Long-4 Tank", PartCategory::FuelTank, 2, 4, 950.0f, {6200.0f}, {}, {}, {}, kHeavyTankNodes, "long_4_tank"},
+    {3, "Short-1 Tank", PartCategory::FuelTank, 1, 1, 160.0f, {420.0f}, {}, {}, {}, kShortTankNodes, "short_1_tank"},
+    {4, "Sparrow Engine", PartCategory::Engine, 1, 1, 230.0f, {}, {60000.0f, 295.0f}, {}, {}, kSparrowNodes, "sparrow_engine"},
+    {5, "Longbow Engine", PartCategory::Engine, 2, 2, 690.0f, {}, {850000.0f, 318.0f}, {}, {}, kLongbowNodes, "longbow_engine"},
+    {6, "Kestrel Engine", PartCategory::Engine, 1, 1, 95.0f, {}, {24000.0f, 265.0f}, {}, {}, kKestrelNodes, "kestrel_engine"},
+    {7, "MK-1 Decoupler", PartCategory::Decoupler, 1, 1, 55.0f, {}, {}, {1.5f}, {}, kStandardDecouplerNodes, "mk1_decoupler"},
+    {8, "Heavy Separator", PartCategory::Decoupler, 1, 2, 190.0f, {}, {}, {2.2f}, {}, kHeavySeparatorNodes, "heavy_separator"},
+    {9, "Radial Separator", PartCategory::Decoupler, 1, 1, 48.0f, {}, {}, {1.2f}, {}, kRadialSeparatorNodes, "radial_separator"},
+    {10, "Fairing Shell", PartCategory::Fairing, 1, 2, 75.0f, {}, {}, {}, {}, kFairingShellNodes, "fairing_shell"},
+    {11, "Nose Fairing", PartCategory::Fairing, 1, 1, 32.0f, {}, {}, {}, {}, kNoseFairingNodes, "nose_fairing"},
+    {12, "Strut Brace", PartCategory::Strut, 1, 1, 40.0f, {}, {}, {}, {}, kStrutNodes, "strut_brace"},
+    {13, "RCS Block", PartCategory::RcsBlock, 1, 1, 120.0f, {}, {}, {}, {52000.0f, 0.9f}, kRcsNodes, "rcs_block"},
+    {14, "Monoprop Tank", PartCategory::FuelTank, 1, 1, 60.0f, {140.0f, 1}, {}, {}, {}, kShortTankNodes, "monoprop_tank"},
+    {15, "Landing Leg", PartCategory::Strut, 1, 1, 90.0f, {}, {}, {}, {}, kLandingLegNodes, "landing_leg"},
 }};
 
 }  // namespace

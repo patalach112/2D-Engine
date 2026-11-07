@@ -183,6 +183,7 @@ core::Result<PartIndex> VehicleAssembly::place_unchecked(const TemplateId tmpl_i
     part.gx = gx;
     part.gy = gy;
     part.rot = rot;
+    part.fuel_type = tmpl->tank.fuel_type;
     part.propellant = tmpl->tank.propellant;
 
     const PartIndex index = static_cast<PartIndex>(parts_.size());
@@ -567,6 +568,68 @@ core::Result<f32> VehicleAssembly::consume_propellant(const PartIndex tank,
     p.propellant -= drained;
     mass_dirty_ = true;
     return core::Result<f32>::ok(drained);
+}
+
+std::vector<VehicleAssembly> VehicleAssembly::split_members(const std::vector<u32>& members) const {
+    std::vector<u32> unique;
+    unique.reserve(members.size());
+    for (const u32 id : members) {
+        if (id < parts_.size() && is_alive(id)) {
+            unique.push_back(id);
+        }
+    }
+    if (unique.empty()) {
+        return {};
+    }
+    std::sort(unique.begin(), unique.end());
+    unique.erase(std::unique(unique.begin(), unique.end()), unique.end());
+
+    std::vector<VehicleAssembly> out;
+    out.reserve(2);
+
+    VehicleAssembly remaining;
+    remaining.parts_ = parts_;  // copies tombstones as well
+    VehicleAssembly detached;
+    detached.parts_ = parts_;
+
+    std::vector<u32> member_mask(parts_.size(), 0);
+    for (const u32 member : unique) {
+        member_mask[member] = 1;
+    }
+
+    const auto build = [&](VehicleAssembly& child, const bool keep_members) {
+        child.occupancy_.clear();
+        for (std::size_t i = 0; i < child.parts_.size(); ++i) {
+            Part& part = child.parts_[i];
+            if (part.tmpl == kInvalidTemplate) {
+                continue;
+            }
+            if (member_mask[i] == (keep_members ? 1u : 0u)) {
+                const PartTemplate* tmpl = find_template(part.tmpl);
+                const Footprint foot = footprint_of(tmpl->w, tmpl->h, part.rot);
+                for (u8 c = 0; c < foot.count; ++c) {
+                    child.occupancy_[hash_cell(static_cast<i16>(part.gx + foot.cells[c].first),
+                                               static_cast<i16>(part.gy + foot.cells[c].second))] =
+                        static_cast<PartIndex>(i);
+                }
+            } else {
+                part.tmpl = kInvalidTemplate;  // gap tombstone
+            }
+        }
+        child.alive_count_ = 0;
+        for (const Part& part : child.parts_) {
+            if (part.tmpl != kInvalidTemplate) {
+                ++child.alive_count_;
+            }
+        }
+        child.mass_dirty_ = true;
+    };
+
+    build(remaining, /*keep_members=*/false);
+    build(detached, /*keep_members=*/true);
+    out.push_back(std::move(remaining));
+    out.push_back(std::move(detached));
+    return out;
 }
 
 std::vector<VehicleAssembly> VehicleAssembly::split_at_decouplers(

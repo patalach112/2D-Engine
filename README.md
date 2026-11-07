@@ -358,8 +358,8 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
   (det CoM − adopted CoM) gives the separation axis — stack splits push along the axis,
   symmetric radial booster splits cancel in the adopted vehicle.
 - **Detached stages are ballistic free-flyers**: gravity-only integration, surface clamp,
-  tracked in `detached_stages()`. Fairings are deleted by M7 (jettison tombstones them) and are
-  deliberately *not* tracked as debris.
+  tracked in `detached_stages()` — including fairing clusters, which detach as one ballistic
+  free-flyer (zero separation impulse) instead of vanishing.
 - **Contact model**: airborne spawn only — a vehicle spawned at r ≤ R is pinned to the surface
   sphere (radial velocity removed, tangential preserved). Approach speed beyond
   `ContactConfig.impact_threshold` (default 5 m/s) → `Impacted` (energy-free dead stop, engines
@@ -383,8 +383,7 @@ machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
   periapsis angle) from a Cartesian state, and flags hyperbolic (unbound) trajectories.
 - **Deliberately out of scope for M8**: rotating planet (no Coriolis), wind, multi-body /
   patched conics on the vehicle side, launch pads, auto-sized drag area, attitude control
-  laws beyond the pitch/torque hook, fairings as tracked debris, fin aerodynamics, Δv
-  estimation helpers.
+  laws beyond the pitch/torque hook, fin aerodynamics, Δv estimation helpers.
 
 ## Design notes (M5)
 

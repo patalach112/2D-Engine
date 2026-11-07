@@ -196,7 +196,7 @@ int main() {
     CHECK(ignitions == 4, "liftoff trio plus Kestrel ignited (4 total)");
     CHECK(separations == 4, "four separators fired (3 liftoff group + sep2)");
     CHECK(fairing_jettisons == 1, "fairing jettisoned");
-    CHECK(flight.detached_stages().size() == 4, "four detached stages tracked");
+    CHECK(flight.detached_stages().size() == 5, "four separators plus the jettisoned fairing tracked");
     CHECK(flight.assembly().alive_count() == 2, "final vehicle is pod + tank3");
 
     const parts::MassProperties& mp = flight.mass_properties();

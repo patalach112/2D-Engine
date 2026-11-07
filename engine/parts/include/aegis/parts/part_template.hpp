@@ -27,7 +27,7 @@ using TemplateId = u16;
 using NodeId = u8;
 inline constexpr TemplateId kInvalidTemplate = static_cast<TemplateId>(0xFFFF);
 
-enum class PartCategory : u8 { CommandPod, FuelTank, Engine, Decoupler, Fairing, Strut };
+enum class PartCategory : u8 { CommandPod, FuelTank, Engine, Decoupler, Fairing, Strut, RcsBlock };
 enum class NodeType : u8 { Top, Bottom, Lateral, Surface };
 
 /// Rotation encoding: low nibble = CCW steps (0..3), bit 4 = flip (mirror about
@@ -57,8 +57,12 @@ struct NodeDef {
 };
 
 struct EngineSpec { f32 thrust = 0.0f; f32 isp = 0.0f; };  ///< thrust in engine units, isp in s
-struct TankSpec { f32 propellant = 0.0f; };                 ///< propellant capacity (mass units)
+struct TankSpec {
+    f32 propellant = 0.0f;          ///< propellant capacity (mass units)
+    u8 fuel_type = 0;               ///< 0 = liquid (main engines), 1 = monoprop (RCS); see vehicle_assembly.hpp
+};
 struct DecouplerSpec { f32 separation_delta_v = 0.0f; };     ///< applied by M8 physics
+struct RcsSpec { f32 torque = 0.0f; f32 drain_kg_per_s = 0.0f; };  ///< pitch torque + monoprop feed rate
 
 /// Static part definition. Instances are 16-byte PODs (see Part) referencing this.
 struct PartTemplate {
@@ -70,6 +74,7 @@ struct PartTemplate {
     TankSpec tank{};
     EngineSpec engine{};
     DecouplerSpec decoupler{};
+    RcsSpec rcs{};
     std::span<const NodeDef> nodes{};
     /// Stable snake_case identifier for serialization (save/load key). Never
     /// changes once shipped — display `name` may be reworded freely.
@@ -82,7 +87,7 @@ struct PartTemplate {
 };
 
 /// Number of built-in templates.
-inline constexpr std::size_t kTemplateCount = 13;
+inline constexpr std::size_t kTemplateCount = 16;
 
 /// Built-in template table (order defines ids 0..kTemplateCount-1).
 [[nodiscard]] const std::array<PartTemplate, kTemplateCount>& templates() noexcept;

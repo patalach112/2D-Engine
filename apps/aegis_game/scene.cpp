@@ -23,9 +23,10 @@ constexpr core::f64 kEarthMu = 3.986004418e14;
 constexpr core::f64 kEarthRadius = 6.371e6;       ///< render rebase: world y' = y - R
 constexpr core::f32 kPi = 3.14159265358979323846f;
 
-// Palette short labels, indexed by TemplateId (registry order, 0..12).
-const char* const kTemplateShortName[13] = {"POD",   "LONG-2", "LONG-4", "SHORT-1", "SPARR", "LNGBW", "KSTRL",
-                                            "DECOP", "HVY-S",  "RAD-S",  "FAIR",    "NOSE",  "STRUT"};
+// Palette short labels, indexed by TemplateId (registry order, 0..kTemplateCount-1).
+const char* const kTemplateShortName[aegis::parts::kTemplateCount] = {"POD",   "LONG-2", "LONG-4", "SHORT-1", "SPARR", "LNGBW", "KSTRL",
+                                                                      "DECOP", "HVY-S",  "RAD-S",  "FAIR",    "NOSE",  "STRUT",
+                                                                      "RCS",   "M-TNK",  "LEG"};
 
 struct VabLayout {
     aegis::ui::UiRect palette{8.0f, 46.0f, 210.0f, 470.0f};
@@ -230,7 +231,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
              aegis::ui::rgb(0.085f, 0.095f, 0.135f, 0.92f), aegis::ui::rgb(0.30f, 0.36f, 0.48f, 0.5f));
     ui.text(layout.palette.x + 12.0f, layout.palette.y + 8.0f, 15.0f, "PALETTE", aegis::ui::rgb(0.65f, 0.74f, 0.90f));
     const float button_w = 88.0f, button_h = 34.0f, gap = 8.0f;
-    for (core::u32 i = 0; i < 13; ++i) {
+    for (core::u32 i = 0; i < aegis::parts::kTemplateCount; ++i) {
         const std::size_t column = i % 2, row = i / 2;
         const float bx = layout.palette.x + 12.0f + static_cast<float>(column) * (button_w + gap);
         const float by = layout.palette.y + 34.0f + static_cast<float>(row) * (button_h + gap);

@@ -14,6 +14,7 @@
 #include "aegis_test.hpp"
 
 using aegis::core::f64;
+using aegis::core::f32;
 namespace core = aegis::core;
 
 #define EXPECT_PHYS_OK(res)                                                                     \
@@ -393,7 +394,7 @@ AEGIS_TEST(physics, "detached stages are tracked as ballistic free-flyers") {
     AEGIS_CHECK(near(measured_g, expected_g, expected_g * 0.02));
 }
 
-AEGIS_TEST(physics, "the full five-stage sequence produces four tracked stages and a clean assembly") {
+AEGIS_TEST(physics, "the full five-stage sequence produces five tracked stages and a clean assembly") {
     DemoRocketPlanes r = build_demo_rocket();
     VehicleFlight flight = make_flight(r, airless_config(0.0), Vec2d{0.0, 100.0}, Vec2d{0.0, 0.0});
     const f64 mass_initial = static_cast<f64>(flight.mass_properties().total_mass);
@@ -401,15 +402,20 @@ AEGIS_TEST(physics, "the full five-stage sequence produces four tracked stages a
         EXPECT_PHYS_OK(flight.activate_next_stage());
     }
     AEGIS_CHECK(flight.assembly().validate().empty());
-    AEGIS_CHECK_EQ(flight.detached_stages().size(), 4u);
+    AEGIS_CHECK_EQ(flight.detached_stages().size(), 5u);  // 4 boosters/stages + fairing
     AEGIS_CHECK_EQ(flight.assembly().alive_count(), 2u);  // pod + tank3
-    // Mass is conserved: vehicle + detached stages == original rocket minus
-    // the jettisoned fairing (fairings are deleted by M7, not tracked).
+    // Mass is conserved exactly: vehicle + every tracked detached piece ==
+    // the original rocket (fairings ride out as ballistic free-flyers now).
     f64 mass_after = static_cast<f64>(flight.mass_properties().total_mass);
     for (const DetachedStage& stage : flight.detached_stages()) {
         mass_after += static_cast<f64>(stage.assembly.mass_properties().total_mass);
     }
-    AEGIS_CHECK(near(mass_after, mass_initial - 32.0, 1e-3));
+    AEGIS_CHECK(near(mass_after, mass_initial, 1e-3));
+    // The fairing is a ballistic free-flyer carrying only the nose cone.
+    const DetachedStage& fairing_stage = flight.detached_stages().back();
+    AEGIS_CHECK_EQ(fairing_stage.assembly.alive_count(), 1u);
+    AEGIS_CHECK(near(static_cast<f64>(fairing_stage.assembly.mass_properties().total_mass), 32.0, 1e-3));
+    AEGIS_CHECK(flight.assembly().part(r.fairing) == nullptr);  // tombstoned in the vehicle
     // Firing a sixth time fails cleanly.
     const core::Result<void> extra = flight.activate_next_stage();
     AEGIS_CHECK(!extra.has_value());
@@ -569,4 +575,171 @@ AEGIS_TEST(physics, "a ballistic coast matches the Kepler oracle from elements_f
     const aegis::orbit::State expected = aegis::orbit::state_at(elements, 10.0);
     AEGIS_CHECK(near(flight.state().position.x, expected.position[0], 1e-6));
     AEGIS_CHECK(near(flight.state().position.y, expected.position[1], 1e-6));
+}
+
+// ---------------------------------------------------------------------------
+// RCS blocks + monoprop tank + landing legs + fairing ballistics (Milestone 10.3)
+// ---------------------------------------------------------------------------
+
+constexpr TemplateId kFairingShell = 10;
+constexpr TemplateId kRcsBlock = 13;
+constexpr TemplateId kMonopropTank = 14;
+constexpr TemplateId kLandingLeg = 15;
+
+// Minimal pitch-authority vehicle: pod + 2 RCS blocks on the laterals, with
+// an optional monoprop tank slung underneath. Baseline control torque is
+// zeroed so the RCS is the only torque source.
+VehicleAssembly build_rcs_rocket(const bool with_monoprop) {
+    VehicleAssembly asmbl;
+    const core::Result<PartIndex> pod = asmbl.add_root(kPod, 0, 0, 0);
+    EXPECT_PHYS_OK(pod);
+    core::Result<PartIndex> left = asmbl.snap(pod.value(), 1, kRcsBlock, 3, 0);
+    EXPECT_PHYS_OK(left);
+    core::Result<PartIndex> right = asmbl.snap(pod.value(), 2, kRcsBlock, 2, 0);
+    EXPECT_PHYS_OK(right);
+    if (with_monoprop) {
+        core::Result<PartIndex> tank = asmbl.snap(pod.value(), 0, kMonopropTank, 0, 0);
+        EXPECT_PHYS_OK(tank);
+    }
+    return asmbl;
+}
+
+VehicleFlight make_rcs_flight(VehicleAssembly asmbl, const f64 control_torque) {
+    VehicleConfig config = airless_config(0.0);
+    config.rotation.control_torque = control_torque;
+    StagingList staging;  // nothing staged
+    core::Result<VehicleFlight> flight = VehicleFlight::create(std::move(asmbl), std::move(staging),
+                                                               config, Vec2d{0.0, 100.0}, Vec2d{0.0, 0.0}, kHalfPi);
+    EXPECT_PHYS_OK(flight);
+    return std::move(flight.value());
+}
+
+AEGIS_TEST(physics, "RCS blocks add pitch torque only while monoprop remains") {
+    {  // no monoprop -> zero authority
+        VehicleFlight flight = make_rcs_flight(build_rcs_rocket(/*with_monoprop=*/false), 0.0);
+        flight.set_pitch_input(1.0);
+        for (int i = 0; i < 120; ++i) {
+            flight.tick(VehicleFlight::kFixedDt);
+        }
+        AEGIS_CHECK(flight.state().angular_velocity == 0.0);
+        AEGIS_CHECK(flight.state().heading == kHalfPi);
+    }
+    {  // monoprop -> positive pitch torque from rest
+        VehicleFlight flight = make_rcs_flight(build_rcs_rocket(/*with_monoprop=*/true), 0.0);
+        flight.set_pitch_input(1.0);
+        for (int i = 0; i < 120; ++i) {
+            flight.tick(VehicleFlight::kFixedDt);
+        }
+        AEGIS_CHECK(flight.state().angular_velocity > 1e-3);
+        AEGIS_CHECK(flight.state().heading > kHalfPi);
+    }
+}
+
+AEGIS_TEST(physics, "RCS monoprop drains proportionally to pitch deflection") {
+    VehicleFlight flight = make_rcs_flight(build_rcs_rocket(/*with_monoprop=*/true), 0.0);
+    flight.set_pitch_input(1.0);
+    const int ticks = 120;  // 0.5 s at 240 Hz
+    for (int i = 0; i < ticks; ++i) {
+        flight.tick(VehicleFlight::kFixedDt);
+    }
+    const f64 consumed = 140.0 - static_cast<f64>(flight.assembly().part(3)->propellant);
+    const f64 expected = 2.0 * 0.9 * (static_cast<f64>(ticks) * VehicleFlight::kFixedDt);
+    AEGIS_CHECK(near(consumed, expected, 5e-3));
+    // Zero deflection must not drain anything.
+    flight.set_pitch_input(0.0);
+    const f32 before = flight.assembly().part(3)->propellant;
+    for (int i = 0; i < 120; ++i) {
+        flight.tick(VehicleFlight::kFixedDt);
+    }
+    AEGIS_CHECK(flight.assembly().part(3)->propellant == before);
+}
+
+AEGIS_TEST(physics, "main engines flame out instead of draining monoprop") {
+    VehicleAssembly asmbl;
+    const core::Result<PartIndex> pod = asmbl.add_root(kPod, 0, 0, 0);
+    EXPECT_PHYS_OK(pod);
+    const core::Result<PartIndex> engine = asmbl.snap(pod.value(), 0, 4, 0, 0);  // sparrow under pod
+    EXPECT_PHYS_OK(engine);
+    const core::Result<PartIndex> tank = asmbl.snap(engine.value(), 1, kMonopropTank, 0, 0);
+    EXPECT_PHYS_OK(tank);
+    VehicleConfig config = airless_config(0.0);
+    StagingList staging;
+    EXPECT_PHYS_OK(staging.assign(asmbl, engine.value(), 0));
+    core::Result<VehicleFlight> flight = VehicleFlight::create(std::move(asmbl), std::move(staging), config,
+                                                               Vec2d{0.0, 100.0}, Vec2d{0.0, 0.0}, kHalfPi);
+    EXPECT_PHYS_OK(flight);
+    EXPECT_PHYS_OK(flight.value().activate_next_stage());
+    flight.value().set_throttle(1.0);
+    for (int i = 0; i < 30; ++i) {
+        flight.value().tick(VehicleFlight::kFixedDt);
+    }
+    AEGIS_CHECK(flight.value().assembly().part(tank.value())->propellant == 140.0f);
+    std::vector<FlightEvent> events;
+    flight.value().take_events(events);
+    AEGIS_CHECK_EQ(std::count(events.begin(), events.end(), FlightEvent::EngineFlameout), 1);
+}
+
+AEGIS_TEST(physics, "jettisoned fairing cluster separates as a ballistic free-flyer") {
+    VehicleAssembly asmbl;
+    const core::Result<PartIndex> pod = asmbl.add_root(kPod, 0, 0, 0);
+    EXPECT_PHYS_OK(pod);
+    const core::Result<PartIndex> shell = asmbl.snap(pod.value(), 3, kFairingShell, 1, 0);  // shell on pod top
+    EXPECT_PHYS_OK(shell);
+    const core::Result<PartIndex> nose = asmbl.snap(shell.value(), 0, 11, 0, 0);  // nose on shell top
+    EXPECT_PHYS_OK(nose);
+    const f64 mass_before = static_cast<f64>(asmbl.mass_properties().total_mass);
+    VehicleConfig config = airless_config(1.0);  // real gravity for the ballistic check
+    StagingList staging;
+    EXPECT_PHYS_OK(staging.assign(asmbl, shell.value(), 0));
+    EXPECT_PHYS_OK(staging.assign(asmbl, nose.value(), 0));
+    core::Result<VehicleFlight> flight = VehicleFlight::create(std::move(asmbl), std::move(staging), config,
+                                                               Vec2d{0.0, 100.0}, Vec2d{30.0, 0.0}, kHalfPi);
+    EXPECT_PHYS_OK(flight);
+    EXPECT_PHYS_OK(flight.value().activate_next_stage());
+    AEGIS_CHECK_EQ(flight.value().detached_stages().size(), 1u);
+    AEGIS_CHECK_EQ(flight.value().detached_stages().front().assembly.alive_count(), 2u);
+    AEGIS_CHECK_EQ(flight.value().assembly().alive_count(), 1u);  // pod alone
+    AEGIS_CHECK(flight.value().assembly().part(shell.value()) == nullptr);
+    AEGIS_CHECK(flight.value().assembly().part(nose.value()) == nullptr);
+    const f64 mass_after = static_cast<f64>(flight.value().mass_properties().total_mass) +
+                           static_cast<f64>(flight.value().detached_stages().front().assembly.mass_properties().total_mass);
+    AEGIS_CHECK(near(mass_after, mass_before, 1e-3));
+    // Zero relative separation velocity: the cluster rides the vehicle's frame.
+    AEGIS_CHECK(flight.value().detached_stages().front().state.velocity.x == 30.0);
+    // And it falls ballistically under real gravity.
+    const Vec2d before = flight.value().detached_stages().front().state.position;
+    for (int i = 0; i < 120; ++i) {
+        flight.value().tick(VehicleFlight::kFixedDt);
+    }
+    AEGIS_CHECK(flight.value().detached_stages().front().state.position.y < before.y);
+}
+
+AEGIS_TEST(physics, "landing legs add mass and inertia but no control authority") {
+    VehicleAssembly pod_only;
+    const core::Result<PartIndex> pod = pod_only.add_root(kPod, 0, 0, 0);
+    EXPECT_PHYS_OK(pod);
+    const auto alone = pod_only.mass_properties();
+
+    VehicleAssembly with_legs;
+    const core::Result<PartIndex> root = with_legs.add_root(kPod, 0, 0, 0);
+    EXPECT_PHYS_OK(root);
+    core::Result<PartIndex> left = with_legs.snap(root.value(), 1, kLandingLeg, 3, 0);
+    EXPECT_PHYS_OK(left);
+    core::Result<PartIndex> right = with_legs.snap(root.value(), 2, kLandingLeg, 2, 0);
+    EXPECT_PHYS_OK(right);
+    const auto armed = with_legs.mass_properties();
+    AEGIS_CHECK(near(static_cast<f64>(armed.total_mass), static_cast<f64>(alone.total_mass) + 180.0, 1e-3));
+    AEGIS_CHECK(armed.inertia_izz > alone.inertia_izz);
+
+    VehicleConfig config = airless_config(0.0);
+    config.rotation.control_torque = 0.0;  // nothing but pseudo-forces can turn the rocket
+    StagingList staging;
+    core::Result<VehicleFlight> flight = VehicleFlight::create(std::move(with_legs), std::move(staging), config,
+                                                               Vec2d{0.0, 100.0}, Vec2d{0.0, 0.0}, kHalfPi);
+    EXPECT_PHYS_OK(flight);
+    flight.value().set_pitch_input(1.0);
+    for (int i = 0; i < 120; ++i) {
+        flight.value().tick(VehicleFlight::kFixedDt);
+    }
+    AEGIS_CHECK(flight.value().state().angular_velocity == 0.0);
 }

@@ -39,6 +39,7 @@ using core::u64;
 using core::u16;
 
 inline constexpr u8 kFuelLiquid = 0;
+inline constexpr u8 kFuelMonoprop = 1;  ///< RCS feed stock; main engines never draw from it
 inline constexpr std::size_t kMaxCellsPerPart = 64;
 inline constexpr std::size_t kMaxParts = 4096;
 using PartIndex = u32;
@@ -161,6 +162,14 @@ public:
     /// pod-bearing components are the flight vehicle(s); callers select.
     [[nodiscard]] std::vector<VehicleAssembly> split_at_decouplers(
         const std::vector<u32>& decoupler_parts) const;
+
+    /// Detach exactly `members` (alive parts) from the assembly into a single
+    /// gap-tombstoned child component. The caller splits fired decouplers
+    /// first and adopts the pod-bearing component, then detaches fairing
+    /// clusters the same way — original PartIndices are preserved in both.
+    /// Returns {this-with-members-tombstoned, members-only assembly}; empty
+    /// `members` yields no assemblies.
+    [[nodiscard]] std::vector<VehicleAssembly> split_members(const std::vector<u32>& members) const;
 
     void clear() noexcept;
 

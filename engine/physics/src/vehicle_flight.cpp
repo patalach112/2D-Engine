@@ -154,8 +154,11 @@ VehicleFlight::Derivative VehicleFlight::evaluate(const FlightState& s,
     // Drag — quadratic, opposes the (air-relative == inertial) velocity.
     force += model::drag_force(config_.body, rho, s.velocity, config_.aero);
 
-    // Control torque about the z axis.
+    // Control torque about the z axis (baseline + RCS when there is feedstock).
     torque += pitch_input_ * config_.rotation.control_torque;
+    if (rcs_available_ && rcs_torque_ > 0.0) {
+        torque += pitch_input_ * rcs_torque_;
+    }
 
     // Weathercock stability (only with atmosphere and positive gain).
     if (config_.aero.weathercock_gain > 0.0 && config_.body.atmosphere_density0 > 0.0) {
@@ -226,7 +229,8 @@ void VehicleFlight::drain_propellant(const f64 dt) noexcept {
                     continue;
                 }
                 const parts::PartTemplate* pt = parts::find_template(p->tmpl);
-                if (pt && pt->category == parts::PartCategory::FuelTank && p->propellant > 0.0f) {
+                if (pt && pt->category == parts::PartCategory::FuelTank &&
+                    p->fuel_type == parts::kFuelLiquid && p->propellant > 0.0f) {
                     tanks.push_back(next);
                 }
                 queue.push_back(next);
@@ -264,6 +268,65 @@ void VehicleFlight::drain_propellant(const f64 dt) noexcept {
                 needed -= static_cast<f64>(drained.value());
             }
         }
+    }
+}
+
+void VehicleFlight::drain_rcs_monoprop(const f64 dt) noexcept {
+    // Installed authority is tallyed even with zero deflection so evaluate()
+    // stays free of bookkeeping; drain only happens on demand.
+    rcs_torque_ = 0.0;
+    f64 rcs_feed_rate = 0.0;
+    f64 monoprop = 0.0;
+    std::vector<parts::PartIndex> monoprop_tanks;  // index order — deterministic
+    const std::size_t part_count = assembly_.parts().size();
+    for (std::size_t i = 0; i < part_count; ++i) {
+        const parts::PartIndex index = static_cast<parts::PartIndex>(i);
+        const parts::Part* p = assembly_.part(index);
+        if (!p) {
+            continue;
+        }
+        const parts::PartTemplate* tmpl = parts::find_template(p->tmpl);
+        if (!tmpl) {
+            continue;
+        }
+        if (tmpl->category == parts::PartCategory::RcsBlock) {
+            rcs_torque_ += static_cast<f64>(tmpl->rcs.torque);
+            rcs_feed_rate += static_cast<f64>(tmpl->rcs.drain_kg_per_s);
+            continue;
+        }
+        if (tmpl->category == parts::PartCategory::FuelTank &&
+            p->fuel_type == parts::kFuelMonoprop && p->propellant > 0.0f) {
+            monoprop += static_cast<f64>(p->propellant);
+            monoprop_tanks.push_back(index);
+        }
+    }
+    rcs_available_ = rcs_torque_ > 0.0 && monoprop > 0.0;
+    if (contact_ == ContactState::Impacted) {
+        rcs_available_ = false;
+        return;
+    }
+    if (!rcs_available_) {
+        return;
+    }
+    const f64 pitch_magnitude = std::fabs(pitch_input_);
+    const f64 demand = rcs_feed_rate * pitch_magnitude * dt;
+    if (demand <= 0.0) {
+        return;
+    }
+    // Deterministic proportional drain across tanks in index order (same
+    // shape as the liquid propellant pass; leftover capacity just stays).
+    const f64 to_drain = std::min(demand, monoprop);
+    for (const parts::PartIndex tank : monoprop_tanks) {
+        const parts::Part* p = assembly_.part(tank);
+        if (!p) {
+            continue;
+        }
+        const f64 remaining = static_cast<f64>(p->propellant);
+        const f64 share = to_drain * (remaining / monoprop);
+        if (share <= 0.0) {
+            continue;
+        }
+        (void)assembly_.consume_propellant(tank, static_cast<f32>(share));
     }
 }
 
@@ -399,6 +462,13 @@ core::Result<void> VehicleFlight::activate_next_stage() {
             remaining_mass -= det_mass_value;
         }
     }
+    // Pieces not claimed by a decoupler (fairing clusters) ride the vehicle
+    // velocity at the instant of this stage firing — zero relative drift.
+    for (std::size_t j = 0; j < claimed.size(); ++j) {
+        if (!claimed[j]) {
+            separation_anchors[j] = vehicle_velocity;
+        }
+    }
     state_.velocity = vehicle_velocity;
 
     for (std::size_t j = 0; j < fired.detached.size(); ++j) {
@@ -449,6 +519,7 @@ void VehicleFlight::tick(const f64 dt) {
     }
 
     drain_propellant(dt);
+    drain_rcs_monoprop(dt);
 
     const parts::MassProperties& mp = assembly_.mass_properties();
 

@@ -55,7 +55,9 @@ PartKind part_kind_of(const parts::PartTemplate& tmpl) noexcept {
         case PartCategory::Fairing:
             return PartKind::Fairing;
         case PartCategory::Strut:
-            return PartKind::Strut;
+            return std::string_view{tmpl.key} == "landing_leg" ? PartKind::LandingLeg : PartKind::Strut;
+        case PartCategory::RcsBlock:
+            return PartKind::RcsBlock;
     }
     return PartKind::FuelTank;
 }
@@ -88,7 +90,12 @@ std::array<core::f32, 4> skin_tint(const parts::PartTemplate& tmpl, const core::
             return tint(palette[pick % palette.size()]);
         }
         case PartCategory::Strut:
+            if (std::string_view{tmpl.key} == "landing_leg") {
+                return tint({0.86f, 0.45f, 0.13f});
+            }
             return tint({0.44f, 0.45f, 0.50f});
+        case PartCategory::RcsBlock:
+            return tint({0.30f, 0.33f, 0.40f});
     }
     return std::array<core::f32, 4>{0.8f, 0.8f, 0.8f, 1.0f};
 }

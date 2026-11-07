@@ -24,6 +24,8 @@ const float K_DECOUPLER = 4.0;
 const float K_SEPARATOR = 5.0;
 const float K_FAIRING = 6.0;
 const float K_STRUT = 7.0;
+const float K_RCS = 8.0;
+const float K_LEG = 9.0;
 
 float sd_roundbox(vec2 p, vec2 b, float r) {
     const vec2 q = abs(p) - b + r;
@@ -182,6 +184,42 @@ void shade_strut(vec2 p, out float d, out vec3 col) {
     col = mix(col, vec3(0.09, 0.09, 0.11), clamp(bolts, 0.0, 1.0));
 }
 
+void shade_rcs(vec2 p, out float d, out vec3 col) {
+    d = sd_roundbox(p, vec2(0.84, 0.84), 0.16);
+    col = v_color.rgb * clamp(0.55 + 0.35 * cos((p.x + 0.30) * 1.25), 0.2, 1.2);
+    // angled thruster cavities in the four corners
+    const float nozzles = dot_at(p, vec2(0.52, 0.52), 0.17) + dot_at(p, vec2(-0.52, 0.52), 0.17) +
+                          dot_at(p, vec2(0.52, -0.52), 0.17) + dot_at(p, vec2(-0.52, -0.52), 0.17);
+    col = mix(col, vec3(0.06, 0.06, 0.08), clamp(nozzles, 0.0, 1.0));
+    // nozzle lip rings
+    const float lips = dot_at(p, vec2(0.52, 0.52), 0.24) + dot_at(p, vec2(-0.52, 0.52), 0.24) +
+                       dot_at(p, vec2(0.52, -0.52), 0.24) + dot_at(p, vec2(-0.52, -0.52), 0.24) -
+                       clamp(nozzles, 0.0, 1.0);
+    col = mix(col, v_color.rgb * 1.25, clamp(lips, 0.0, 1.0) * 0.7);
+    // cyan index stripe
+    col = mix(col, vec3(0.26, 0.78, 0.88), smoothstep(0.075, 0.045, abs(p.y)) * 0.6);
+    // top/bottom mount bolts
+    const float bolts = dot_at(p, vec2(0.0, 0.66), 0.055) + dot_at(p, vec2(0.0, -0.66), 0.055);
+    col = mix(col, vec3(0.76, 0.79, 0.86), clamp(bolts, 0.0, 1.0) * 0.85);
+}
+
+void shade_leg(vec2 p, out float d, out vec3 col) {
+    const float strut = sd_roundbox(p, vec2(0.24, 0.86), 0.12);
+    const float foot = sd_roundbox(p - vec2(0.0, -0.78), vec2(0.86, 0.19), 0.09);
+    const float mount = sd_roundbox(p - vec2(0.0, 0.78), vec2(0.56, 0.15), 0.06);
+    d = min(strut, min(foot, mount));
+    col = v_color.rgb * (0.52 + 0.28 * cos((p.x + 0.22) * 2.1));
+    // foot pad treads
+    col *= 1.0 - 0.45 * clamp(band(p.y, -0.78, 0.055), 0.0, 1.0);
+    // knee joint
+    col = mix(col, vec3(0.12, 0.12, 0.14), dot_at(p, vec2(0.0, -0.02), 0.155) * 0.9);
+    // hydraulic glint along the strut
+    col += vec3(0.10, 0.11, 0.13) * smoothstep(0.075, 0.0, abs(p.x + 0.07));
+    // mount bolts
+    const float bolts = dot_at(p, vec2(0.38, 0.78), 0.055) + dot_at(p, vec2(-0.38, 0.78), 0.055);
+    col = mix(col, vec3(0.82, 0.84, 0.90), clamp(bolts, 0.0, 1.0) * 0.85);
+}
+
 void main() {
     vec2 p = v_local;
     const uint flags = uint(v_flags + 0.5);
@@ -217,6 +255,10 @@ void main() {
         shade_separator(p, variant, d, col);
     } else if (kind == K_FAIRING) {
         shade_fairing(p, d, col);
+    } else if (kind == K_RCS) {
+        shade_rcs(p, d, col);
+    } else if (kind == K_LEG) {
+        shade_leg(p, d, col);
     } else {  // K_STRUT
         shade_strut(p, d, col);
     }

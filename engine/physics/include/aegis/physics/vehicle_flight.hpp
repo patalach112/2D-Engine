@@ -92,6 +92,12 @@ private:
     [[nodiscard]] Derivative evaluate(const FlightState& s, const parts::MassProperties& mp) const noexcept;
     void apply_contact_constraint() noexcept;
     void drain_propellant(f64 dt) noexcept;
+    /// Tally installed RCS authority (alive RcsBlock parts) and drain
+    /// monoprop in proportion to |pitch input| for this fixed step. Main
+    /// engines never see monoprop tanks and RCS never draws from liquid
+    /// tanks. `rcs_available_` gates the extra control torque in evaluate().
+    /// Recomputed once per tick, so RK4 substeps stay pure.
+    void drain_rcs_monoprop(f64 dt) noexcept;
     void apply_separation_impulses(std::vector<parts::VehicleAssembly>& pieces) noexcept;
 
     parts::VehicleAssembly assembly_;
@@ -101,6 +107,8 @@ private:
     ContactState contact_ = ContactState::Airborne;
     f64 throttle_ = 0.0;
     f64 pitch_input_ = 0.0;
+    f64 rcs_torque_ = 0.0;      ///< total pitch torque of installed RCS blocks
+    bool rcs_available_ = false;  ///< monoprop remains for the RCS to burn
     f64 accumulator_ = 0.0;
     std::vector<parts::PartIndex> ignited_;     // sorted, unique
     std::vector<parts::PartIndex> flameout_;    // subset of ignited_

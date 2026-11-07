@@ -33,6 +33,9 @@ constexpr TemplateId kKestrel = 6;
 constexpr TemplateId kDecoupler = 7;
 constexpr TemplateId kRadialSeparator = 9;
 constexpr TemplateId kNoseFairing = 11;
+constexpr TemplateId kRcsBlock = 13;
+constexpr TemplateId kMonopropTank = 14;
+constexpr TemplateId kLandingLeg = 15;
 constexpr TemplateId kStrut = 12;
 
 bool near(const f32 a, const f32 b, const f32 eps = 1e-4f) noexcept {
@@ -100,6 +103,33 @@ AEGIS_TEST(parts, "built-in registry loads with contiguous ids") {
         AEGIS_CHECK(registry[i].dry_mass > 0.0f);
         AEGIS_CHECK(!registry[i].nodes.empty());
     }
+}
+
+AEGIS_TEST(parts, "new M10.3 templates are registered with stable keys") {
+    const PartTemplate* rcs = find_template_by_key("rcs_block");
+    const PartTemplate* mono = find_template_by_key("monoprop_tank");
+    const PartTemplate* leg = find_template_by_key("landing_leg");
+    AEGIS_CHECK(rcs != nullptr && rcs->category == PartCategory::RcsBlock);
+    AEGIS_CHECK(rcs->id == kRcsBlock);
+    AEGIS_CHECK(rcs->rcs.torque > 0.0f && rcs->rcs.drain_kg_per_s > 0.0f);
+    AEGIS_CHECK(mono != nullptr && mono->category == PartCategory::FuelTank);
+    AEGIS_CHECK(mono->id == kMonopropTank);
+    AEGIS_CHECK(mono->tank.propellant > 0.0f && mono->tank.fuel_type == kFuelMonoprop);
+    AEGIS_CHECK(leg != nullptr && leg->category == PartCategory::Strut);
+    AEGIS_CHECK(leg->id == kLandingLeg);
+    AEGIS_CHECK(leg->w == 1 && leg->h == 1);
+}
+
+AEGIS_TEST(parts, "fuel type is carried from the template into placed parts") {
+    VehicleAssembly asmbl;
+    const core::Result<PartIndex> root = asmbl.add_root(kPod, 0, 0, 0);
+    AEGIS_CHECK(root.has_value());
+    const core::Result<PartIndex> mono = asmbl.snap(root.value(), 0, kMonopropTank, 0, 0);
+    AEGIS_CHECK(mono.has_value());
+    const core::Result<PartIndex> liquid = asmbl.snap(root.value(), 3, kShortTank, 1, 0);
+    AEGIS_CHECK(liquid.has_value());
+    AEGIS_CHECK(asmbl.part(mono.value())->fuel_type == kFuelMonoprop);
+    AEGIS_CHECK(asmbl.part(root.value())->fuel_type == kFuelLiquid);
 }
 
 AEGIS_TEST(parts, "find_template rejects out-of-range ids") {

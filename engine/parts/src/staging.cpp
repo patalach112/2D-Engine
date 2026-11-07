@@ -212,7 +212,11 @@ core::Result<StageFireResult> StagingList::activate_next_stage(VehicleAssembly& 
         asmbl.adopt(std::move(components[vehicle]));
     }
 
-    // 2) Fairings: tombstone whatever is still part of the vehicle.
+    // 2) Fairings: the staged fairing cluster becomes a ballistic free-flyer.
+    //    BFS over alive Fairing-category parts reachable from the staged
+    //    seeds (a shell + nose cone cluster) — anything non-fairing stops the
+    //    flood, so a payload mounted inside stays with the vehicle. Zero
+    //    separation impulse: the cluster drifts off ballistically.
     std::vector<u32> fairings;
     for (const StageActionItem& item : stage.items) {
         if (item.action == StageAction::JettisonFairing) {
@@ -220,10 +224,66 @@ core::Result<StageFireResult> StagingList::activate_next_stage(VehicleAssembly& 
         }
     }
     if (!fairings.empty()) {
-        const core::Result<u32> dropped = asmbl.jettison_fairings(fairings);
-        if (!dropped.has_value()) {
-            return core::Result<StageFireResult>::failure(ErrorCode::InvalidArgument,
-                                                          "jettison failed during staging");
+        const std::size_t part_count = asmbl.parts().size();
+        std::vector<char> in_cluster(part_count, 0);
+        std::vector<std::pair<u32, u32>> adjacency;
+        const auto collect_cluster = [&]() {
+            adjacency = asmbl.adjacency();
+            std::vector<std::vector<u32>> graph(part_count);
+            for (const auto& [a, b] : adjacency) {
+                graph[a].push_back(b);
+                graph[b].push_back(a);
+            }
+            std::vector<u32> queue;
+            for (const u32 seed : fairings) {
+                if (seed >= part_count || in_cluster[seed]) {
+                    continue;
+                }
+                const Part* p = asmbl.part(seed);
+                if (!p) {
+                    continue;  // travelled with a detached component already
+                }
+                const PartTemplate* tmpl = find_template(p->tmpl);
+                if (!tmpl || tmpl->category != PartCategory::Fairing) {
+                    continue;
+                }
+                in_cluster[seed] = 1;
+                queue.push_back(seed);
+            }
+            while (!queue.empty()) {
+                const u32 current = queue.back();
+                queue.pop_back();
+                for (const u32 next : graph[current]) {
+                    if (in_cluster[next]) {
+                        continue;
+                    }
+                    const Part* p = asmbl.part(next);
+                    if (!p) {
+                        continue;
+                    }
+                    const PartTemplate* tmpl = find_template(p->tmpl);
+                    if (!tmpl || tmpl->category != PartCategory::Fairing) {
+                        continue;  // payload / body stops the flood
+                    }
+                    in_cluster[next] = 1;
+                    queue.push_back(next);
+                }
+            }
+        };
+        collect_cluster();
+        std::vector<u32> cluster;
+        for (std::size_t i = 0; i < part_count; ++i) {
+            if (in_cluster[i]) {
+                cluster.push_back(static_cast<u32>(i));  // ascending — deterministic
+            }
+        }
+        if (!cluster.empty()) {
+            std::vector<VehicleAssembly> pieces = asmbl.split_members(cluster);
+            if (pieces.size() == 2) {
+                // pieces[0] = adopted vehicle, pieces[1] = fairing cluster.
+                result.detached.push_back(std::move(pieces[1]));
+                asmbl.adopt(std::move(pieces[0]));
+            }
         }
     }
 
