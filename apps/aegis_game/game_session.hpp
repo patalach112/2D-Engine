@@ -10,6 +10,8 @@
 
 #include <aegis/core/types.hpp>
 #include <aegis/core/result.hpp>
+
+#include "game_presets.hpp"
 #include <aegis/orbit/orbit.hpp>
 #include <aegis/parts/staging.hpp>
 #include <aegis/parts/vehicle_assembly.hpp>
@@ -68,6 +70,12 @@ public:
         symmetry_ = symmetry_ == Symmetry::None ? Symmetry::MirrorVertical : Symmetry::None;
     }
     [[nodiscard]] Symmetry symmetry() const noexcept { return symmetry_; }
+
+    /// Load one of the kPresetCount built-in craft (build screen only; a no-op
+    /// with a toast in flight). Rebuilds the assembly, re-assigns staging.
+    void load_preset(core::u32 index) noexcept;
+    [[nodiscard]] core::u32 preset_index() const noexcept { return preset_index_; }
+    [[nodiscard]] const char* preset_name() const noexcept { return preset_info(preset_index_).name; }
 
     /// Cursor position in VAB world units (wu, y-up, origin at the pad).
     void set_cursor_world(core::f32 world_x, core::f32 world_y) noexcept;
@@ -141,6 +149,7 @@ private:
     bool preview_dirty_ = true;
     core::u64 build_version_ = 0;
 
+    core::u32 preset_index_ = 0;  ///< build craft slot (VAB presets, keys 1..3)
     std::optional<physics::VehicleFlight> flight_;
     std::string toast_;
     core::f64 toast_time_ = -1.0e9;

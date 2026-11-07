@@ -150,3 +150,57 @@ AEGIS_TEST(game_session, "determinism: identical sessions fly bitwise-identical 
     AEGIS_CHECK(first.flight()->state().position.x == second.flight()->state().position.x);
     AEGIS_CHECK(first.propellant_fraction() == second.propellant_fraction());
 }
+
+AEGIS_TEST(game_session, "all three presets load legal, launchable stacks") {
+    GameSession session;
+    const core::u32 expected_parts[aegis::game::kPresetCount] = {6u, 7u, 12u};
+    for (core::u32 slot = 0; slot < aegis::game::kPresetCount; ++slot) {
+        session.load_preset(slot);
+        AEGIS_CHECK_EQ(session.preset_index(), slot);
+        AEGIS_CHECK_EQ(session.part_count(), expected_parts[slot]);
+        AEGIS_CHECK(session.launch_blocker().empty());
+        AEGIS_CHECK(session.delta_v_estimate() > 900.0);  // RADIAL TRIPLE ≈ 1036, others higher
+    }
+}
+
+AEGIS_TEST(game_session, "preset masses increase across the roster") {
+    GameSession session;
+    session.load_preset(0);
+    const core::f64 hopper = session.build_mass_kg();
+    session.load_preset(1);
+    const core::f64 orbiter = session.build_mass_kg();
+    session.load_preset(2);
+    const core::f64 triple = session.build_mass_kg();
+    AEGIS_CHECK(orbiter > hopper);
+    AEGIS_CHECK(triple > hopper);
+    AEGIS_CHECK(orbiter > triple);  // 5320 vs 4191
+}
+
+AEGIS_TEST(game_session, "load_preset round-trips back to the hopper") {
+    GameSession session;
+    session.load_preset(2);
+    AEGIS_CHECK_EQ(session.part_count(), 12u);
+    session.load_preset(0);
+    AEGIS_CHECK_EQ(session.part_count(), 6u);
+    AEGIS_CHECK(std::string(session.preset_name()) == "SPARROW HOPPER");
+}
+
+AEGIS_TEST(game_session, "preset switching is rejected during flight") {
+    GameSession session;
+    session.load_preset(2);
+    AEGIS_CHECK(session.launch());
+    session.load_preset(0);  // must refuse mid-flight
+    AEGIS_CHECK(session.screen() == GameScreen::Flight);
+    AEGIS_CHECK_EQ(session.part_count(), 12u);
+}
+
+AEGIS_TEST(game_session, "the orbiter lofts under its own stack") {
+    GameSession session;
+    session.load_preset(1);
+    AEGIS_CHECK(session.launch());
+    for (int i = 0; i < 900; ++i) {  // 15 seconds at 1/60
+        session.update(1.0 / 60.0);
+    }
+    AEGIS_CHECK(session.altitude_m() > 40.0);
+    AEGIS_CHECK(session.speed_m_s() > 25.0);
+}

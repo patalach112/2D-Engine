@@ -21,6 +21,9 @@ enum class UiKey : core::u8 {
     Up, Down, Left, Right,
     LeftShift,
     LeftCtrl,
+    Num1,
+    Num2,
+    Num3,
     Count  // sentinel — number of key slots
 };
 

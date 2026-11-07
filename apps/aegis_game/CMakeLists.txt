@@ -2,7 +2,7 @@
 # aegis_game_session is Vulkan-free (linked into aegis_tests for headless
 # coverage); aegis_game_scenes turns session state into renderer2d calls and
 # is shared with the aegis_game_check verification tool.
-add_library(aegis_game_session STATIC game_session.cpp)
+add_library(aegis_game_session STATIC game_presets.cpp game_session.cpp)
 add_library(aegis::game_session ALIAS aegis_game_session)
 target_include_directories(aegis_game_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aegis_game_session PUBLIC aegis::core aegis::orbit aegis::parts aegis::physics)

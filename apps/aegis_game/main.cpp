@@ -73,6 +73,9 @@ constexpr std::pair<int, aegis::ui::UiKey> kKeyTable[] = {
     {GLFW_KEY_DOWN, aegis::ui::UiKey::Down},   {GLFW_KEY_LEFT, aegis::ui::UiKey::Left},
     {GLFW_KEY_RIGHT, aegis::ui::UiKey::Right}, {GLFW_KEY_LEFT_SHIFT, aegis::ui::UiKey::LeftShift},
     {GLFW_KEY_LEFT_CONTROL, aegis::ui::UiKey::LeftCtrl},
+    {GLFW_KEY_1, aegis::ui::UiKey::Num1},
+    {GLFW_KEY_2, aegis::ui::UiKey::Num2},
+    {GLFW_KEY_3, aegis::ui::UiKey::Num3},
 };
 
 struct InputState {
@@ -363,6 +366,13 @@ int run_windowed() {
         if (session.screen() == aegis::game::GameScreen::Build) {
             if (input.pressed(aegis::ui::UiKey::Escape)) {
                 glfwSetWindowShouldClose(window.get(), GLFW_TRUE);
+            }
+            if (input.pressed(aegis::ui::UiKey::Num1)) {
+                session.load_preset(0);
+            } else if (input.pressed(aegis::ui::UiKey::Num2)) {
+                session.load_preset(1);
+            } else if (input.pressed(aegis::ui::UiKey::Num3)) {
+                session.load_preset(2);
             }
         } else {
             if (input.pressed(aegis::ui::UiKey::Escape)) {

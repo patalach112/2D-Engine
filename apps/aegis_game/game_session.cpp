@@ -282,8 +282,26 @@ void GameSession::clear_assembly() noexcept {
     bump_build_version();
 }
 
+void GameSession::load_preset(const core::u32 index) noexcept {
+    if (screen_ == GameScreen::Flight) {
+        set_toast("RETURN TO VAB TO SWITCH CRAFT");
+        return;
+    }
+    preset_index_ = index % kPresetCount;
+    flight_.reset();
+    flight_time_ = 0.0;
+    map_overlay_ = false;
+    build_ = make_preset_rocket(preset_index_);
+    staging_.clear_all();
+    (void)staging_.auto_assign(build_);
+    preview_dirty_ = true;
+    bump_build_version();
+    const std::string name = std::string("CRAFT: ") + preset_info(preset_index_).name;
+    set_toast(name.c_str());
+}
+
 void GameSession::reset_demo() noexcept {
-    build_ = parts::make_demo_rocket();
+    build_ = make_preset_rocket(preset_index_);
     staging_.clear_all();
     (void)staging_.auto_assign(build_);
     bump_build_version();

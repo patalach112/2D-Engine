@@ -249,17 +249,20 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     ui.panel(layout.info.x, layout.info.y, layout.info.w, layout.info.h,
              aegis::ui::rgb(0.085f, 0.095f, 0.135f, 0.92f), aegis::ui::rgb(0.30f, 0.36f, 0.48f, 0.5f));
     ui.text(layout.info.x + 12.0f, layout.info.y + 8.0f, 15.0f, "VEHICLE", aegis::ui::rgb(0.65f, 0.74f, 0.90f));
-    char buffer[128];
+    char buffer[160];
+    std::snprintf(buffer, sizeof(buffer), "CRAFT %s (%u/%u)", session.preset_name(), session.preset_index() + 1,
+                  aegis::game::kPresetCount);
+    ui.text(layout.info.x + 12.0f, layout.info.y + 24.0f, 11.0f, buffer, aegis::ui::rgb(0.55f, 0.80f, 0.95f));
     std::snprintf(buffer, sizeof(buffer), "MASS   %8.0f KG", session.build_mass_kg());
-    ui.text(layout.info.x + 12.0f, layout.info.y + 34.0f, 13.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
+    ui.text(layout.info.x + 12.0f, layout.info.y + 44.0f, 13.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
     std::snprintf(buffer, sizeof(buffer), "DELTA-V %6.0f M/S", session.delta_v_estimate());
-    ui.text(layout.info.x + 12.0f, layout.info.y + 54.0f, 13.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
+    ui.text(layout.info.x + 12.0f, layout.info.y + 64.0f, 13.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
     std::snprintf(buffer, sizeof(buffer), "PARTS  %8u", session.part_count());
-    ui.text(layout.info.x + 12.0f, layout.info.y + 74.0f, 13.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
+    ui.text(layout.info.x + 12.0f, layout.info.y + 84.0f, 13.0f, buffer, aegis::ui::rgb(0.85f, 0.88f, 0.93f));
 
-    ui.text(layout.info.x + 12.0f, layout.info.y + 104.0f, 13.0f, "STAGING", aegis::ui::rgb(0.65f, 0.74f, 0.90f));
+    ui.text(layout.info.x + 12.0f, layout.info.y + 114.0f, 13.0f, "STAGING", aegis::ui::rgb(0.65f, 0.74f, 0.90f));
     const auto& stages = session.staging().stages();
-    float stage_y = layout.info.y + 124.0f;
+    float stage_y = layout.info.y + 134.0f;
     for (std::size_t s = 0; s < stages.size() && s < 6; ++s) {
         core::u32 engines = 0, decouplers = 0, fairings = 0;
         for (const auto& item : stages[s].items) {
@@ -289,8 +292,28 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         session.clear_assembly();
     }
     const core::u64 demo_id = aegis::ui::UiContext::make_id("demo");
-    if (ui.button(demo_id, layout.info.x + 114.0f, buttons_y + 40.0f, 96.0f, 30.0f, "LOAD DEMO", kNeutral)) {
+    if (ui.button(demo_id, layout.info.x + 114.0f, buttons_y + 40.0f, 96.0f, 30.0f, "RELOAD", kNeutral)) {
         session.reset_demo();
+    }
+    // Preset selection strip (keys 1..3 + clickable).
+    const core::u64 preset_id = aegis::ui::UiContext::make_id("preset_strip");
+    (void)preset_id;
+    for (core::u32 slot = 0; slot < aegis::game::kPresetCount; ++slot) {
+        const core::u64 pid = aegis::ui::UiContext::make_id("preset", slot);
+        const float px = layout.info.x + 12.0f + static_cast<float>(slot) * 68.0f;
+        const float py = buttons_y + 78.0f;
+        char label[16];
+        std::snprintf(label, sizeof(label), "%u", slot + 1);
+        const bool active = session.preset_index() == slot;
+        aegis::ui::UiButtonStyle style = kNeutral;
+        if (active) {
+            style.idle = {0.16f, 0.34f, 0.46f, 0.97f};
+            style.hover = {0.20f, 0.42f, 0.56f, 1.0f};
+            style.border = {0.35f, 0.85f, 1.0f, 0.7f};
+        }
+        if (ui.button(pid, px, py, 60.0f, 26.0f, label, style)) {
+            session.load_preset(slot);
+        }
     }
 
     // Launch blocker + big LAUNCH button.
@@ -304,6 +327,11 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
                   blocker.empty() ? kAccentGreen : kNeutral)) {
         (void)session.launch();
     }
+
+    // Controls hint, bottom-left.
+    ui.text(16.0f, vh - 26.0f, 11.0f,
+            "WHEEL ZOOM   LMB PLACE   X REMOVE   S SYMMETRY   1/2/3 CRAFT   ESC QUIT",
+            aegis::ui::rgb(0.42f, 0.47f, 0.56f));
 
     // Toast line.
     if (wall_clock_s - session.toast_time() < 3.0 && !session.toast().empty()) {
