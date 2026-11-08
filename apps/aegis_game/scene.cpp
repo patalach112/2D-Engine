@@ -549,6 +549,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         }
     }
 
+    int hovered_palette = -1;
     const float cell_w = 103.0f, cell_h = 50.0f, cell_gap = 6.0f;
     const float cell_x0 = palette.x + 12.0f, cell_y0 = palette.y + 100.0f;
     for (core::u32 vi = 0; vi < visible_count; ++vi) {
@@ -562,6 +563,9 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         const core::u64 id = aegis::ui::UiContext::make_id("palette", static_cast<core::u32>(i));
         const bool selected = session.selected_template() == static_cast<parts::TemplateId>(i);
         const bool hovered = ui.mouse_inside(bx, by, cell_w, cell_h);
+        if (hovered) {
+            hovered_palette = i;
+        }
         if (ui.press_button(id, bx, by, cell_w, cell_h)) {
             session.select_template(static_cast<parts::TemplateId>(i));
         }
@@ -569,6 +573,66 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         ui.rect_outline(bx, by, cell_w, cell_h, selected ? c_accent : c_border, selected ? 1.5f : 1.0f);
         ui.text(bx + cell_w * 0.5f, by + cell_h - 10.0f, 10.5f, kTemplateShortName[i],
                 selected ? c_text : c_dim, aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+    }
+
+    // ================= HOVER INSPECTOR (bottom-centre) ====================
+    // SFS-style part card: designation + live spec readout. Shown for the
+    // hovered palette cell, else for the part currently on the cursor.
+    {
+        int tip_id = hovered_palette;
+        if (tip_id < 0 && ghost_visible) {
+            tip_id = static_cast<int>(session.selected_template());
+        }
+        const parts::PartTemplate* tip =
+            tip_id >= 0 ? aegis::parts::find_template(static_cast<parts::TemplateId>(tip_id)) : nullptr;
+        if (tip != nullptr) {
+            char spec[192];
+            switch (tip->category) {
+                case parts::PartCategory::CommandPod:
+                    std::snprintf(spec, sizeof(spec), "COMMAND  ·  %.0f KG  ·  %u×%u CELLS",
+                                  tip->dry_mass, tip->w, tip->h);
+                    break;
+                case parts::PartCategory::FuelTank:
+                    std::snprintf(spec, sizeof(spec), "%s TANK  ·  CAPACITY %.0f  ·  %.0f KG",
+                                  tip->tank.fuel_type == 1 ? "MONOPROP" : "FUEL", tip->tank.propellant,
+                                  tip->dry_mass);
+                    break;
+                case parts::PartCategory::Engine:
+                    std::snprintf(spec, sizeof(spec), "ENGINE  ·  THRUST %.0f  ·  ISP %.0f S  ·  %.0f KG",
+                                  tip->engine.thrust, tip->engine.isp, tip->dry_mass);
+                    break;
+                case parts::PartCategory::Decoupler:
+                    std::snprintf(spec, sizeof(spec), "DECOUPLER  ·  SEP DV %.1f  ·  %.0f KG",
+                                  tip->decoupler.separation_delta_v, tip->dry_mass);
+                    break;
+                case parts::PartCategory::Fairing:
+                    std::snprintf(spec, sizeof(spec), "FAIRING  ·  AERO SHELL  ·  %.0f KG", tip->dry_mass);
+                    break;
+                case parts::PartCategory::Strut:
+                    std::snprintf(spec, sizeof(spec), "STRUT  ·  STRUCTURAL  ·  %.0f KG", tip->dry_mass);
+                    break;
+                case parts::PartCategory::RcsBlock:
+                    std::snprintf(spec, sizeof(spec), "RCS BLOCK  ·  TORQUE %.0f  ·  %.0f KG", tip->rcs.torque,
+                                  tip->dry_mass);
+                    break;
+            }
+            const float w1 = ui.text_width_px(tip->name, 12.5f, aegis::ui::FontWeight::SemiBold);
+            const float w2 = ui.text_width_px(spec, 10.0f, aegis::ui::FontWeight::SemiBold);
+            const float panel_w = std::clamp(std::max(w1, w2) + 38.0f, 250.0f, 560.0f);
+            const float panel_h = 46.0f;
+            const float min_x = palette.x + palette.w + 14.0f;
+            const float max_x = info.x - panel_w - 14.0f;
+            const float px = std::clamp(vw * 0.5f - panel_w * 0.5f, min_x, std::max(min_x, max_x));
+            const float py = vh - panel_h - 88.0f;
+            ui.fill_rect(px + 2.0f, py + 3.0f, panel_w, panel_h, aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.35f));
+            ui.fill_rect(px, py, panel_w, panel_h, aegis::ui::rgb(0.086f, 0.096f, 0.141f, 0.97f));
+            ui.rect_outline(px, py, panel_w, panel_h, c_border, 1.0f);
+            ui.fill_rect(px, py, 3.0f, panel_h, c_accent);
+            ui.text(px + 14.0f, py + 6.0f, 12.5f, tip->name, c_text, aegis::ui::TextAlign::Left,
+                    aegis::ui::FontWeight::SemiBold);
+            ui.text(px + 14.0f, py + 24.0f, 10.0f, spec, c_dim, aegis::ui::TextAlign::Left,
+                    aegis::ui::FontWeight::SemiBold);
+        }
     }
 
     // ================= TOGGLE CLUSTER (bottom-left) ======================
