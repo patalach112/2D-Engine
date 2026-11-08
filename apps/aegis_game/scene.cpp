@@ -870,9 +870,17 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         ui.text(vw * 0.5f, vh - 15.0f, 10.0f, buffer, c_faint, aegis::ui::TextAlign::Center);
     }
 
-    // Toast line.
+    // Toast — amber warning pill, not bare text.
     if (wall_clock_s - session.toast_time() < 3.0 && !session.toast().empty()) {
-        ui.text(vw * 0.5f, 66.0f, 13.0f, session.toast().c_str(), aegis::ui::rgb(0.98f, 0.87f, 0.45f, 1.0f),
+        const char* msg = session.toast().c_str();
+        const float ty = 58.0f;
+        const float tw = ui.text_width_px(msg, 12.0f, aegis::ui::FontWeight::SemiBold) + 44.0f;
+        const float tx = vw * 0.5f - tw * 0.5f;
+        ui.fill_rect(tx + 2.0f, ty + 2.0f, tw, 28.0f, aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.32f));
+        ui.fill_rect(tx, ty, tw, 28.0f, aegis::ui::rgb(0.105f, 0.10f, 0.075f, 0.96f));
+        ui.rect_outline(tx, ty, tw, 28.0f, aegis::ui::rgb(0.52f, 0.42f, 0.16f, 0.95f), 1.0f);
+        ui.fill_rect(tx, ty, 3.0f, 28.0f, aegis::ui::rgb(0.96f, 0.70f, 0.26f, 1.0f));
+        ui.text(vw * 0.5f, ty + 7.0f, 12.0f, msg, aegis::ui::rgb(0.98f, 0.87f, 0.45f, 1.0f),
                 aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
     }
 
@@ -1539,18 +1547,32 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
     ui.text(16.0f, vh - 44.0f, 9.0f, "A/D OR Q/E  PITCH  ·  W/S  THROTTLE", kTextFaint);
     ui.text(16.0f, vh - 26.0f, 9.0f, "SPACE  STAGE  ·  M  MAP  ·  ESC  ABORT TO VAB", kTextFaint);
 
-    // Toast (fades after 3 s).
+    // Toast (fades after 3 s) — amber warning pill.
     if (now - session.toast_time() < 3.0 && !session.toast().empty()) {
-        ui.text(vw * 0.5f, vh * 0.16f, 15.0f, session.toast().c_str(), aegis::ui::rgb(0.98f, 0.88f, 0.45f),
-                aegis::ui::TextAlign::Center);
+        const char* msg = session.toast().c_str();
+        const float ty = vh * 0.16f;
+        const float tw = ui.text_width_px(msg, 13.0f, aegis::ui::FontWeight::SemiBold) + 44.0f;
+        const float tx = vw * 0.5f - tw * 0.5f;
+        ui.fill_rect(tx + 2.0f, ty - 6.0f + 2.0f, tw, 30.0f, aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.32f));
+        ui.fill_rect(tx, ty - 6.0f, tw, 30.0f, aegis::ui::rgb(0.105f, 0.10f, 0.075f, 0.96f));
+        ui.rect_outline(tx, ty - 6.0f, tw, 30.0f, aegis::ui::rgb(0.52f, 0.42f, 0.16f, 0.95f), 1.0f);
+        ui.fill_rect(tx, ty - 6.0f, 3.0f, 30.0f, aegis::ui::rgb(0.96f, 0.70f, 0.26f, 1.0f));
+        ui.text(vw * 0.5f, ty + 1.0f, 13.0f, msg, aegis::ui::rgb(0.98f, 0.88f, 0.45f, 1.0f),
+                aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
     }
 
-    // Impact splash.
+    // Impact splash — framed red stencil banner.
     if (session.impacted()) {
-        ui.text(vw * 0.5f, vh * 0.42f, 34.0f, "IMPACT", aegis::ui::rgb(1.0f, 0.55f, 0.4f),
-                aegis::ui::TextAlign::Center);
-        ui.text(vw * 0.5f, vh * 0.42f + 40.0f, 13.0f, "ESC RETURNS TO THE VAB", aegis::ui::rgb(0.75f, 0.7f, 0.65f),
-                aegis::ui::TextAlign::Center);
+        const float bw = 360.0f, bh = 92.0f;
+        const float bx = vw * 0.5f - bw * 0.5f, by = vh * 0.42f - 14.0f;
+        ui.fill_rect(bx + 3.0f, by + 4.0f, bw, bh, aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.35f));
+        ui.fill_rect(bx, by, bw, bh, aegis::ui::rgb(0.13f, 0.055f, 0.045f, 0.94f));
+        ui.rect_outline(bx, by, bw, bh, aegis::ui::rgb(0.75f, 0.25f, 0.16f, 1.0f), 1.5f);
+        ui.fill_rect(bx, by, bw, 3.0f, aegis::ui::rgb(0.95f, 0.35f, 0.22f, 1.0f));
+        ui.text(vw * 0.5f, by + 10.0f, 34.0f, "IMPACT", aegis::ui::rgb(1.0f, 0.55f, 0.4f),
+                aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+        ui.text(vw * 0.5f, by + 54.0f, 12.0f, "ESC RETURNS TO THE VAB", aegis::ui::rgb(0.85f, 0.72f, 0.66f),
+                aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
     }
 
     aegis::render::submit_ui(renderer, camera, ui);
