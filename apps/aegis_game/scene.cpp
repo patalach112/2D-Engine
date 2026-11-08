@@ -590,30 +590,31 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             switch (tip->category) {
                 case parts::PartCategory::CommandPod:
                     std::snprintf(spec, sizeof(spec), "COMMAND  ·  %.0f KG  ·  %u×%u CELLS",
-                                  tip->dry_mass, tip->w, tip->h);
+                                  static_cast<double>(tip->dry_mass), static_cast<unsigned>(tip->w),
+                                  static_cast<unsigned>(tip->h));
                     break;
                 case parts::PartCategory::FuelTank:
                     std::snprintf(spec, sizeof(spec), "%s TANK  ·  CAPACITY %.0f  ·  %.0f KG",
-                                  tip->tank.fuel_type == 1 ? "MONOPROP" : "FUEL", tip->tank.propellant,
-                                  tip->dry_mass);
+                                  tip->tank.fuel_type == 1 ? "MONOPROP" : "FUEL", static_cast<double>(tip->tank.propellant),
+                                  static_cast<double>(tip->dry_mass));
                     break;
                 case parts::PartCategory::Engine:
                     std::snprintf(spec, sizeof(spec), "ENGINE  ·  THRUST %.0f  ·  ISP %.0f S  ·  %.0f KG",
-                                  tip->engine.thrust, tip->engine.isp, tip->dry_mass);
+                                  static_cast<double>(tip->engine.thrust), static_cast<double>(tip->engine.isp),
+                                  static_cast<double>(tip->dry_mass));
                     break;
                 case parts::PartCategory::Decoupler:
                     std::snprintf(spec, sizeof(spec), "DECOUPLER  ·  SEP DV %.1f  ·  %.0f KG",
-                                  tip->decoupler.separation_delta_v, tip->dry_mass);
+                                  static_cast<double>(tip->decoupler.separation_delta_v), static_cast<double>(tip->dry_mass));
                     break;
                 case parts::PartCategory::Fairing:
-                    std::snprintf(spec, sizeof(spec), "FAIRING  ·  AERO SHELL  ·  %.0f KG", tip->dry_mass);
+                    std::snprintf(spec, sizeof(spec), "FAIRING  ·  AERO SHELL  ·  %.0f KG", static_cast<double>(tip->dry_mass));
                     break;
                 case parts::PartCategory::Strut:
-                    std::snprintf(spec, sizeof(spec), "STRUT  ·  STRUCTURAL  ·  %.0f KG", tip->dry_mass);
+                    std::snprintf(spec, sizeof(spec), "STRUT  ·  STRUCTURAL  ·  %.0f KG", static_cast<double>(tip->dry_mass));
                     break;
                 case parts::PartCategory::RcsBlock:
-                    std::snprintf(spec, sizeof(spec), "RCS BLOCK  ·  TORQUE %.0f  ·  %.0f KG", tip->rcs.torque,
-                                  tip->dry_mass);
+                    std::snprintf(spec, sizeof(spec), "RCS BLOCK  ·  TORQUE %.0f  ·  %.0f KG", static_cast<double>(tip->rcs.torque), static_cast<double>(tip->dry_mass));
                     break;
             }
             const float w1 = ui.text_width_px(tip->name, 12.5f, aegis::ui::FontWeight::SemiBold);
@@ -1353,8 +1354,8 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         }
         // Scale bar — nearest nice round distance to ~130 px, SFS-map style.
         {
-            const core::f32 wpp = camera.world_per_pixel();
-            const float target = 130.0f * wpp;
+            const core::f32 wpp_map = camera.world_per_pixel();
+            const float target = 130.0f * wpp_map;
             const float pow10 = std::pow(10.0f, std::floor(std::log10(target)));
             float nice = pow10;
             if (target / pow10 >= 5.0f) {
@@ -1362,13 +1363,13 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
             } else if (target / pow10 >= 2.0f) {
                 nice = pow10 * 2.0f;
             }
-            const float bar_px = nice / wpp;
+            const float bar_px = nice / wpp_map;
             const float bx1 = vw - 30.0f, bx0 = bx1 - bar_px, by = vh - 34.0f;
             char scale[40];
             if (nice >= 1000.0f) {
-                std::snprintf(scale, sizeof(scale), "%.0f KM", nice * 0.001f);
+                std::snprintf(scale, sizeof(scale), "%.0f KM", static_cast<double>(nice) * 0.001);
             } else {
-                std::snprintf(scale, sizeof(scale), "%.0f M", nice);
+                std::snprintf(scale, sizeof(scale), "%.0f M", static_cast<double>(nice));
             }
             ui.fill_rect(bx0, by, bar_px, 2.5f, kTextDim);
             ui.fill_rect(bx0, by - 5.0f, 1.5f, 7.5f, kTextDim);

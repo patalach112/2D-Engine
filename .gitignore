@@ -16,3 +16,6 @@ compile_commands.json
 # Logs / dumps
 *.log
 frame.png
+
+# Local capture artifacts (aegis_game_check output)
+qa*_aegis_game_*.png
