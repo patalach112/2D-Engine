@@ -1351,6 +1351,31 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         if (!parked && suborbital && state.map_impact_pending) {
             ui.text(30.0f, 196.0f, 9.5f, "SUBORBITAL — TRAJECTORY IMPACTS THE SURFACE", kTextFaint);
         }
+        // Scale bar — nearest nice round distance to ~130 px, SFS-map style.
+        {
+            const core::f32 wpp = camera.world_per_pixel();
+            const float target = 130.0f * wpp;
+            const float pow10 = std::pow(10.0f, std::floor(std::log10(target)));
+            float nice = pow10;
+            if (target / pow10 >= 5.0f) {
+                nice = pow10 * 5.0f;
+            } else if (target / pow10 >= 2.0f) {
+                nice = pow10 * 2.0f;
+            }
+            const float bar_px = nice / wpp;
+            const float bx1 = vw - 30.0f, bx0 = bx1 - bar_px, by = vh - 34.0f;
+            char scale[40];
+            if (nice >= 1000.0f) {
+                std::snprintf(scale, sizeof(scale), "%.0f KM", nice * 0.001f);
+            } else {
+                std::snprintf(scale, sizeof(scale), "%.0f M", nice);
+            }
+            ui.fill_rect(bx0, by, bar_px, 2.5f, kTextDim);
+            ui.fill_rect(bx0, by - 5.0f, 1.5f, 7.5f, kTextDim);
+            ui.fill_rect(bx1 - 1.5f, by - 5.0f, 1.5f, 7.5f, kTextDim);
+            ui.text((bx0 + bx1) * 0.5f, by - 20.0f, 10.5f, scale, kTextDim, aegis::ui::TextAlign::Center,
+                    aegis::ui::FontWeight::SemiBold);
+        }
         draw_screen_vignette(renderer, camera);
         aegis::render::submit_ui(renderer, camera, ui);
         return;
@@ -1500,6 +1525,10 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
     }
     ui.bar(24.0f, 132.0f, 212.0f, 13.0f, session.propellant_fraction(), aegis::ui::rgb(0.96f, 0.70f, 0.26f),
            aegis::ui::rgb(0.10f, 0.11f, 0.15f), aegis::ui::rgb(0.40f, 0.36f, 0.24f, 0.7f));
+    for (const float notch : {0.25f, 0.5f, 0.75f}) {
+        ui.fill_rect(24.0f + 212.0f * notch - 0.75f, 132.0f, 1.5f, 13.0f,
+                     aegis::ui::rgb(0.05f, 0.05f, 0.08f, 0.85f));
+    }
     ui.text(24.0f, 150.0f, 8.0f, "PROPELLANT", kTextFaint, aegis::ui::TextAlign::Left,
             aegis::ui::FontWeight::SemiBold);
 
