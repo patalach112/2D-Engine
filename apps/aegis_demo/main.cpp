@@ -127,6 +127,14 @@ int run_windowed() {
         return exit_from_failure("instance");
     }
     aegis::vk::Instance instance = std::move(instance_result).take();
+    // Raw Vulkan calls below (command pool, sync objects, frame loop) go through
+    // this *static* volk's own dispatch table — initialise it explicitly (see
+    // apps/aegis_game/main.cpp for the full note).
+    if (volkInitialize() != VK_SUCCESS) {
+        AEGIS_LOG_ERROR("[aegis] volkInitialize failed in the application (loader vanished?)");
+        return exit_from_failure("volk");
+    }
+    volkLoadInstance(instance.handle());
 
     // --- Surface ------------------------------------------------------------------
     auto surface_result = aegis::vk::GlfwSurface::create(instance, window.get());
@@ -154,6 +162,7 @@ int run_windowed() {
         return exit_from_failure("device");
     }
     aegis::vk::Device device = std::move(device_result).take();
+    volkLoadDevice(device.handle());  // populate the exe's device-level PFNs
 
     // --- Swapchain -------------------------------------------------------------------
     int fb_width = 0;

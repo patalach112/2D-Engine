@@ -112,6 +112,18 @@ if(AEGIS_WINDOWED)
         set(GLFW_BUILD_WAYLAND  ${_aegis_have_wayland} CACHE BOOL "" FORCE)
     endif()
 
+    # GLFW MUST be built shared. aegis_engine is a shared library and GLFW
+    # keeps its process state (the `_glfw` struct, including `initialized`)
+    # in process-global data. A static glfw would be linked into aegis_engine
+    # AND into every consumer (two independent `_glfw` copies): glfwInit() in
+    # the exe would leave the engine's copy uninitialized, and every
+    # glfwCreateWindowSurface() inside aegis_engine then fails with
+    # GLFW_NOT_INITIALIZED (65537) -> VK_ERROR_INITIALIZATION_FAILED (-3).
+    # NOTE: glfw 3.4 derives its library type from GLFW_LIBRARY_TYPE (or
+    # BUILD_SHARED_LIBS); GLFW_BUILD_SHARED_LIBRARY is an internal *normal*
+    # variable, so setting it as a cache entry does nothing.
+    set(GLFW_LIBRARY_TYPE "SHARED" CACHE STRING "GLFW library type (SHARED)" FORCE)
+
     set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

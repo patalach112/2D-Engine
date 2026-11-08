@@ -108,6 +108,19 @@ fallback only applies to X11/Wayland-less Linux hosts. (Before v0.2.0 the fallba
 unconditionally forced the Null platform on Windows too, which returned no required Vulkan
 instance extensions and failed at `glfwCreateWindowSurface` with
 `VK_ERROR_EXTENSION_NOT_PRESENT`.)
+**GLFW is always built shared** (`GLFW_LIBRARY_TYPE=SHARED`). GLFW keeps its process state
+(the `_glfw` struct, including `initialized`) in process-global data; linked statically into
+both `aegis_engine.dll` and a consumer `.exe` it would produce two independent copies and
+every `glfwCreateWindowSurface()` inside the engine would fail with `GLFW_NOT_INITIALIZED`
+(65537) → `VK_ERROR_INITIALIZATION_FAILED` (−3). Never link a private static glfw into a
+consumer — always go through `aegis::glfw`. On Windows the build drops `glfw3.dll` next to
+every consumer next to `aegis_engine.dll` automatically.
+Related: each windowed app initialises its own static copy of **volk** — the engine
+initialises its `volk` internally, but a consumer binary's raw Vulkan calls (if any)
+go through the consumer's own dispatch table and require the documented
+`volkInitialize()` + `volkLoadInstance()` + `volkLoadDevice()` calls after creating
+the instance/device (already wired into `aegis_game`, `aegis_demo`, `aegis_orbit_demo`
+and `aegis_batch_demo`).
 `aegis_rocket_dump` needs no window at all — offscreen rendering works on any headless
 machine with a Vulkan 1.3 driver, and skips cleanly (exit 0) without one.
 

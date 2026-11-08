@@ -19,7 +19,7 @@ add_executable(aegis_game main.cpp)
 
 if(AEGIS_WINDOWED)
     target_compile_definitions(aegis_game PRIVATE AEGIS_WINDOWED=1)
-    target_link_libraries(aegis_game PRIVATE aegis_game_scenes aegis::renderer2d aegis::orbit aegis::vk aegis::core glfw)
+    target_link_libraries(aegis_game PRIVATE aegis_game_scenes aegis::renderer2d aegis::orbit aegis::vk aegis::core aegis::glfw)
     if(AEGIS_GLFW_NULL_PLATFORM)
         target_compile_definitions(aegis_game PRIVATE AEGIS_GLFW_NULL_PLATFORM=1)
     else()
