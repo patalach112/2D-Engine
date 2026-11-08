@@ -77,15 +77,29 @@ void draw_sky(aegis::renderer2d::BatchRenderer& renderer, const aegis::renderer2
     }
 
     // Procedural starfield: stable per star index, fades in with altitude.
+    // Three colour temperatures (warm/cool/white), a handful of bright anchors,
+    // small sizes biased by a squared hash so the field looks deep, not flat.
     const core::f32 star_alpha = std::clamp((alt - 0.22f) * 1.6f, 0.0f, 1.0f);
     if (star_alpha > 0.0f) {
-        for (core::u32 star = 0; star < 72; ++star) {
+        for (core::u32 star = 0; star < 118; ++star) {
             const core::f32 sx = x + (hash01(star, star_seed) - 0.5f) * vw;
             const core::f32 sy = top - hash01(star, star_seed ^ 0x9E37u) * vh * 0.78f;
-            const core::f32 size = (0.5f + 1.5f * hash01(star, 0x51FAu)) * 2.2f * wpp;
-            const core::f32 a = star_alpha * (0.35f + 0.65f * hash01(star, 0xBEEFu));
-            renderer.draw_sprite(sprite(sx, sy, size, size,
-                                        std::array<core::f32, 4>{0.92f, 0.95f, 1.0f, a}, 0.0f, -1.0f));
+            const core::f32 size_h = hash01(star, 0x51FAu);
+            const core::f32 size = (0.35f + 1.85f * size_h * size_h) * 2.6f * wpp;
+            const core::f32 a = star_alpha * (0.30f + 0.70f * hash01(star, 0xBEEFu));
+            const core::f32 temp = hash01(star, 0x3B1Eu);
+            std::array<core::f32, 4> tint{0.93f, 0.95f, 1.0f, a};
+            if (temp < 0.22f) {
+                tint = {1.0f, 0.88f, 0.76f, a};   // warm K/M class
+            } else if (temp > 0.80f) {
+                tint = {0.76f, 0.86f, 1.0f, a};   // hot B class
+            }
+            renderer.draw_sprite(sprite(sx, sy, size, size, tint, 0.0f, -1.0f));
+            // Bright anchor stars get a soft halo.
+            if (size_h > 0.93f) {
+                renderer.draw_sprite(sprite(sx, sy, size * 3.2f, size * 3.2f,
+                                            {tint[0], tint[1], tint[2], a * 0.30f}, 0.0f, 0.85f));
+            }
         }
     }
 }
@@ -120,6 +134,23 @@ void draw_planet(aegis::renderer2d::BatchRenderer& renderer, const core::f64 cen
     // Re-cover the interior of that rim with the surface so only the edge glows.
     renderer.draw_sprite(sprite(cx, cy, 2.0f * r * 0.90f, 2.0f * r * 0.90f, style.land, 0.0f, -1.0f));
     renderer.draw_sprite(sprite(cx + 0.24f * r, cy - 0.24f * r, 2.0f * r * 0.69f, 2.0f * r * 0.69f, shade, 0.0f, -1.0f));
+    // Cloud streaks — soft elongated ellipses hugging the lit side of the
+    // limb, rotated to match the shader light (upper-left). Pure sprite
+    // composition: radial alpha fades + in-plane rotation, no shaders touched.
+    const auto cloud = [&](const core::f32 dx, const core::f32 dy, const core::f32 w,
+                           const core::f32 h, const core::f32 alpha) {
+        renderer.draw_sprite(sprite(cx + dx, cy + dy, 2.0f * r * w, 2.0f * r * h,
+                                    {0.97f, 0.98f, 1.0f, alpha}, -0.28f, 0.88f));
+    };
+    cloud(-0.16f * r, 0.30f * r, 0.46f, 0.075f, 0.17f);
+    cloud(0.20f * r, -0.05f * r, 0.52f, 0.062f, 0.14f);
+    cloud(-0.28f * r, -0.34f * r, 0.36f, 0.055f, 0.12f);
+    // Polar cap — flattened ellipse near the north pole.
+    renderer.draw_sprite(sprite(cx, cy + 0.80f * r, 2.0f * r * 0.40f, 2.0f * r * 0.13f,
+                                {0.94f, 0.97f, 1.0f, 0.55f}, 0.0f, 0.60f));
+    // Specular glint on the ocean toward the light (upper-left).
+    renderer.draw_sprite(sprite(cx - 0.30f * r, cy + 0.30f * r, 2.0f * r * 0.12f, 2.0f * r * 0.09f,
+                                {1.0f, 0.99f, 0.92f, 0.55f}, -0.5f, 0.92f));
 }
 
 void draw_ground(aegis::renderer2d::BatchRenderer& renderer, const aegis::renderer2d::Camera2D& camera) noexcept {

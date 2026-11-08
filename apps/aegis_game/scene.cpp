@@ -34,6 +34,37 @@ struct VabLayout {
     aegis::ui::UiRect launch{455.0f, 644.0f, 370.0f, 58.0f};
 };
 
+/// Cinematic edge falloff for flight/map: layered black bands from the top and
+/// bottom edges, quadratically fading in. Pure sprite composition — no shader.
+void draw_screen_vignette(BatchRenderer& renderer, const aegis::renderer2d::Camera2D& camera) noexcept {
+    const core::f32 vh = camera.visible_world_height();
+    const core::f32 vw = camera.visible_world_width();
+    const core::f32 x = camera.x();
+    const core::f32 y_top = camera.y() + vh * 0.5f;
+    const core::f32 y_bot = camera.y() - vh * 0.5f;
+    constexpr int kBands = 7;
+    for (int i = 0; i < kBands; ++i) {
+        const core::f32 t = static_cast<core::f32>(i) / static_cast<core::f32>(kBands);
+        const core::f32 a = 0.20f * (1.0f - t) * (1.0f - t);
+        const core::f32 band_h = vh * 0.030f;
+        const core::f32 cy = (static_cast<core::f32>(i) + 0.5f) * band_h;
+        aegis::renderer2d::SpriteInstance s{};
+        s.width = vw + 4.0f;
+        s.height = band_h + 0.75f * camera.world_per_pixel();  // overlap kills f32 seams
+        s.r = 0.0f;
+        s.g = 0.0f;
+        s.b = 0.0f;
+        s.a = a;
+        s.rotation = 0.0f;
+        s.softness = 0.0f;
+        s.x = x;
+        s.y = y_top - cy;
+        renderer.draw_sprite(s);
+        s.y = y_bot + cy;
+        renderer.draw_sprite(s);
+    }
+}
+
 bool point_in(const aegis::ui::UiInput& input, const aegis::ui::UiRect rect) noexcept {
     return input.mouse_x >= rect.x && input.mouse_x < rect.x + rect.w && input.mouse_y >= rect.y &&
            input.mouse_y < rect.y + rect.h;
@@ -67,12 +98,12 @@ void draw_grid(BatchRenderer& renderer, const Camera2D& camera) noexcept {
     for (core::i32 x = -10; x <= 10; ++x) {
         const core::f32 fx = static_cast<core::f32>(x);
         const bool major = (x % 5) == 0;
-        renderer.draw_line(fx, -0.6f, fx, 14.5f, 0.70f, 0.78f, 0.95f, major ? 0.13f : 0.05f, thin, 0.0f);
+        renderer.draw_line(fx, -0.6f, fx, 14.5f, 0.70f, 0.78f, 0.95f, major ? 0.16f : 0.068f, thin, 0.0f);
     }
     for (core::i32 y = 0; y <= 14; ++y) {
         const core::f32 fy = static_cast<core::f32>(y);
         const bool major = (y % 5) == 0;
-        renderer.draw_line(-11.0f, fy, 11.0f, fy, 0.70f, 0.78f, 0.95f, major ? 0.12f : 0.045f, thin, 0.0f);
+        renderer.draw_line(-11.0f, fy, 11.0f, fy, 0.70f, 0.78f, 0.95f, major ? 0.15f : 0.062f, thin, 0.0f);
     }
     renderer.draw_line(0.5f, -0.6f, 0.5f, 14.5f, 1.0f, 0.62f, 0.25f, 0.32f, wpp * 2.0f, 0.0f);
 }
@@ -125,6 +156,8 @@ void scene_state_init(SceneState& state) noexcept {
     state.map_impact_pending = false;
     state.map_impact_in_s = -1.0;
     state.map_t_ap_s = state.map_t_pe_s = -1.0;
+    state.fx_seen_detached = 0;
+    state.fx_puffs.clear();
 }
 
 void scene_state_reset_flight(SceneState& state) noexcept {
@@ -193,6 +226,46 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
 
     // --- world ---------------------------------------------------------
     draw_fullscreen_bands(renderer, camera, {0.094f, 0.102f, 0.130f}, {0.038f, 0.043f, 0.062f}, 10);
+    // Warm spotlight wash from above the build axis (out of focus).
+    {
+        aegis::renderer2d::SpriteInstance wash{};
+        wash.x = 0.0f;
+        wash.y = 9.2f;
+        wash.width = 10.5f;
+        wash.height = 6.4f;
+        wash.r = 0.99f;
+        wash.g = 0.93f;
+        wash.b = 0.76f;
+        wash.a = 0.055f;
+        wash.rotation = 0.0f;
+        wash.softness = 0.9f;
+        renderer.draw_sprite(wash);
+    }
+    // Distant gantry columns flanking the bay — dark silhouettes, faint.
+    {
+        const core::f32 wpp = camera.world_per_pixel();
+        constexpr core::f32 kColX[4] = {-8.8f, -7.0f, 7.0f, 8.8f};
+        for (int i = 0; i < 4; ++i) {
+            aegis::renderer2d::SpriteInstance col{};
+            col.x = kColX[i];
+            col.y = 6.6f;
+            col.width = 1.15f;
+            col.height = 14.5f;
+            col.r = 0.030f;
+            col.g = 0.033f;
+            col.b = 0.046f;
+            col.a = 0.85f;
+            col.rotation = 0.0f;
+            col.softness = 0.18f;
+            renderer.draw_sprite(col);
+            for (const core::f32 y_off : {-3.4f, 0.0f, 3.4f}) {
+                renderer.draw_line(kColX[i] - 0.52f, 6.6f + y_off - 0.7f, kColX[i] + 0.52f,
+                                   6.6f + y_off + 0.7f, 0.10f, 0.11f, 0.145f, 0.55f, wpp * 1.6f, 0.0f);
+                renderer.draw_line(kColX[i] - 0.52f, 6.6f + y_off + 0.7f, kColX[i] + 0.52f,
+                                   6.6f + y_off - 0.7f, 0.10f, 0.11f, 0.145f, 0.55f, wpp * 1.6f, 0.0f);
+            }
+        }
+    }
     if (state.grid_visible) {
         draw_grid(renderer, camera);
     }
@@ -392,7 +465,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
             ui.fill_rect(lx, ly, lw, lh, hovered ? aegis::ui::rgb(0.10f, 0.57f, 0.30f, 1.0f)
                                                  : aegis::ui::rgb(0.085f, 0.49f, 0.26f, 1.0f));
             ui.fill_rect(lx + 1.0f, ly + 1.0f, lw - 2.0f, 2.0f, aegis::ui::rgb(0.36f, 0.95f, 0.55f, 0.9f));
-            ui.rect_outline(lx, ly, lw, lh, aegis::ui::rgb(0.16f, 0.72f, 0.35f, 1.0f), 1.0f);
+            ui.rect_outline(lx, ly, lw, lh, aegis::ui::rgb(0.24f, 0.80f, 0.42f, 1.0f), 1.5f);
             ui.text(lx + lw * 0.5f, ly + 9.0f, 20.0f, "LAUNCH", aegis::ui::rgb(0.94f, 1.0f, 0.96f, 1.0f),
                     aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
         } else {
@@ -413,6 +486,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
     ui.panel_frame(palette.x, palette.y, palette.w, palette.h, c_panel, c_border, c_accent_dim);
     ui.text(palette.x + 16.0f, palette.y + 12.0f, 16.0f, "PARTS", c_text, aegis::ui::TextAlign::Left,
             aegis::ui::FontWeight::SemiBold);
+    ui.divider(palette.x + 16.0f, palette.y + 34.0f, palette.w - 32.0f, aegis::ui::rgb(0.24f, 0.30f, 0.42f, 0.9f));
     std::snprintf(buffer, sizeof(buffer), "%zu", aegis::parts::kTemplateCount);
     ui.fill_rect(palette.x + palette.w - 44.0f, palette.y + 11.0f, 28.0f, 19.0f, aegis::ui::rgb(0.10f, 0.11f, 0.16f, 1.0f));
     ui.text(palette.x + palette.w - 30.0f, palette.y + 13.5f, 11.0f, buffer, c_dim, aegis::ui::TextAlign::Center,
@@ -475,6 +549,7 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         }
     }
 
+    int hovered_palette = -1;
     const float cell_w = 103.0f, cell_h = 50.0f, cell_gap = 6.0f;
     const float cell_x0 = palette.x + 12.0f, cell_y0 = palette.y + 100.0f;
     for (core::u32 vi = 0; vi < visible_count; ++vi) {
@@ -488,6 +563,9 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         const core::u64 id = aegis::ui::UiContext::make_id("palette", static_cast<core::u32>(i));
         const bool selected = session.selected_template() == static_cast<parts::TemplateId>(i);
         const bool hovered = ui.mouse_inside(bx, by, cell_w, cell_h);
+        if (hovered) {
+            hovered_palette = i;
+        }
         if (ui.press_button(id, bx, by, cell_w, cell_h)) {
             session.select_template(static_cast<parts::TemplateId>(i));
         }
@@ -495,6 +573,67 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         ui.rect_outline(bx, by, cell_w, cell_h, selected ? c_accent : c_border, selected ? 1.5f : 1.0f);
         ui.text(bx + cell_w * 0.5f, by + cell_h - 10.0f, 10.5f, kTemplateShortName[i],
                 selected ? c_text : c_dim, aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+    }
+
+    // ================= HOVER INSPECTOR (bottom-centre) ====================
+    // SFS-style part card: designation + live spec readout. Shown for the
+    // hovered palette cell, else for the part currently on the cursor.
+    {
+        int tip_id = hovered_palette;
+        if (tip_id < 0 && ghost_visible) {
+            tip_id = static_cast<int>(session.selected_template());
+        }
+        const parts::PartTemplate* tip =
+            tip_id >= 0 ? aegis::parts::find_template(static_cast<parts::TemplateId>(tip_id)) : nullptr;
+        if (tip != nullptr) {
+            char spec[192];
+            switch (tip->category) {
+                case parts::PartCategory::CommandPod:
+                    std::snprintf(spec, sizeof(spec), "COMMAND  ·  %.0f KG  ·  %u×%u CELLS",
+                                  static_cast<double>(tip->dry_mass), static_cast<unsigned>(tip->w),
+                                  static_cast<unsigned>(tip->h));
+                    break;
+                case parts::PartCategory::FuelTank:
+                    std::snprintf(spec, sizeof(spec), "%s TANK  ·  CAPACITY %.0f  ·  %.0f KG",
+                                  tip->tank.fuel_type == 1 ? "MONOPROP" : "FUEL", static_cast<double>(tip->tank.propellant),
+                                  static_cast<double>(tip->dry_mass));
+                    break;
+                case parts::PartCategory::Engine:
+                    std::snprintf(spec, sizeof(spec), "ENGINE  ·  THRUST %.0f  ·  ISP %.0f S  ·  %.0f KG",
+                                  static_cast<double>(tip->engine.thrust), static_cast<double>(tip->engine.isp),
+                                  static_cast<double>(tip->dry_mass));
+                    break;
+                case parts::PartCategory::Decoupler:
+                    std::snprintf(spec, sizeof(spec), "DECOUPLER  ·  SEP DV %.1f  ·  %.0f KG",
+                                  static_cast<double>(tip->decoupler.separation_delta_v), static_cast<double>(tip->dry_mass));
+                    break;
+                case parts::PartCategory::Fairing:
+                    std::snprintf(spec, sizeof(spec), "FAIRING  ·  AERO SHELL  ·  %.0f KG", static_cast<double>(tip->dry_mass));
+                    break;
+                case parts::PartCategory::Strut:
+                    std::snprintf(spec, sizeof(spec), "STRUT  ·  STRUCTURAL  ·  %.0f KG", static_cast<double>(tip->dry_mass));
+                    break;
+                case parts::PartCategory::RcsBlock:
+                    std::snprintf(spec, sizeof(spec), "RCS BLOCK  ·  TORQUE %.0f  ·  %.0f KG", static_cast<double>(tip->rcs.torque), static_cast<double>(tip->dry_mass));
+                    break;
+            }
+            const float w1 = ui.text_width_px(tip->name, 12.5f, aegis::ui::FontWeight::SemiBold);
+            const float w2 = ui.text_width_px(spec, 10.0f, aegis::ui::FontWeight::SemiBold);
+            const float panel_w = std::clamp(std::max(w1, w2) + 38.0f, 250.0f, 560.0f);
+            const float panel_h = 46.0f;
+            const float min_x = palette.x + palette.w + 14.0f;
+            const float max_x = info.x - panel_w - 14.0f;
+            const float px = std::clamp(vw * 0.5f - panel_w * 0.5f, min_x, std::max(min_x, max_x));
+            const float py = vh - panel_h - 88.0f;
+            ui.fill_rect(px + 2.0f, py + 3.0f, panel_w, panel_h, aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.35f));
+            ui.fill_rect(px, py, panel_w, panel_h, aegis::ui::rgb(0.086f, 0.096f, 0.141f, 0.97f));
+            ui.rect_outline(px, py, panel_w, panel_h, c_border, 1.0f);
+            ui.fill_rect(px, py, 3.0f, panel_h, c_accent);
+            ui.text(px + 14.0f, py + 6.0f, 12.5f, tip->name, c_text, aegis::ui::TextAlign::Left,
+                    aegis::ui::FontWeight::SemiBold);
+            ui.text(px + 14.0f, py + 24.0f, 10.0f, spec, c_dim, aegis::ui::TextAlign::Left,
+                    aegis::ui::FontWeight::SemiBold);
+        }
     }
 
     // ================= TOGGLE CLUSTER (bottom-left) ======================
@@ -732,9 +871,17 @@ void draw_vab(BatchRenderer& renderer, SceneState& state, const aegis::ui::UiInp
         ui.text(vw * 0.5f, vh - 15.0f, 10.0f, buffer, c_faint, aegis::ui::TextAlign::Center);
     }
 
-    // Toast line.
+    // Toast — amber warning pill, not bare text.
     if (wall_clock_s - session.toast_time() < 3.0 && !session.toast().empty()) {
-        ui.text(vw * 0.5f, 66.0f, 13.0f, session.toast().c_str(), aegis::ui::rgb(0.98f, 0.87f, 0.45f, 1.0f),
+        const char* msg = session.toast().c_str();
+        const float ty = 58.0f;
+        const float tw = ui.text_width_px(msg, 12.0f, aegis::ui::FontWeight::SemiBold) + 44.0f;
+        const float tx = vw * 0.5f - tw * 0.5f;
+        ui.fill_rect(tx + 2.0f, ty + 2.0f, tw, 28.0f, aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.32f));
+        ui.fill_rect(tx, ty, tw, 28.0f, aegis::ui::rgb(0.105f, 0.10f, 0.075f, 0.96f));
+        ui.rect_outline(tx, ty, tw, 28.0f, aegis::ui::rgb(0.52f, 0.42f, 0.16f, 0.95f), 1.0f);
+        ui.fill_rect(tx, ty, 3.0f, 28.0f, aegis::ui::rgb(0.96f, 0.70f, 0.26f, 1.0f));
+        ui.text(vw * 0.5f, ty + 7.0f, 12.0f, msg, aegis::ui::rgb(0.98f, 0.87f, 0.45f, 1.0f),
                 aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
     }
 
@@ -1043,8 +1190,18 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
             state.map_rig.update(1.0 / 60.0);
         }
     } else {
-        // Follow the CoM.
-        state.flight_rig.set_target(rocket_x, rocket_y);
+        // Follow the CoM with a clamped velocity look-ahead — the craft sits
+        // slightly low in frame on ascent and swings into orbit cinematically,
+        // without the camera running away at orbital speed.
+        core::f64 lead_x = fs.velocity.x * 0.32;
+        core::f64 lead_y = fs.velocity.y * 0.32;
+        const core::f64 lead_len = std::hypot(lead_x, lead_y);
+        constexpr core::f64 kMaxLead = 55.0;  // metres of look-ahead, hard cap
+        if (lead_len > kMaxLead) {
+            lead_x *= kMaxLead / lead_len;
+            lead_y *= kMaxLead / lead_len;
+        }
+        state.flight_rig.set_target(rocket_x + lead_x, rocket_y + lead_y);
         if (input.wheel != 0.0f) {
             state.flight_rig.zoom_wheel(static_cast<core::f64>(input.wheel));
         }
@@ -1195,6 +1352,32 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
         if (!parked && suborbital && state.map_impact_pending) {
             ui.text(30.0f, 196.0f, 9.5f, "SUBORBITAL — TRAJECTORY IMPACTS THE SURFACE", kTextFaint);
         }
+        // Scale bar — nearest nice round distance to ~130 px, SFS-map style.
+        {
+            const core::f32 wpp_map = camera.world_per_pixel();
+            const float target = 130.0f * wpp_map;
+            const float pow10 = std::pow(10.0f, std::floor(std::log10(target)));
+            float nice = pow10;
+            if (target / pow10 >= 5.0f) {
+                nice = pow10 * 5.0f;
+            } else if (target / pow10 >= 2.0f) {
+                nice = pow10 * 2.0f;
+            }
+            const float bar_px = nice / wpp_map;
+            const float bx1 = vw - 30.0f, bx0 = bx1 - bar_px, by = vh - 34.0f;
+            char scale[40];
+            if (nice >= 1000.0f) {
+                std::snprintf(scale, sizeof(scale), "%.0f KM", static_cast<double>(nice) * 0.001);
+            } else {
+                std::snprintf(scale, sizeof(scale), "%.0f M", static_cast<double>(nice));
+            }
+            ui.fill_rect(bx0, by, bar_px, 2.5f, kTextDim);
+            ui.fill_rect(bx0, by - 5.0f, 1.5f, 7.5f, kTextDim);
+            ui.fill_rect(bx1 - 1.5f, by - 5.0f, 1.5f, 7.5f, kTextDim);
+            ui.text((bx0 + bx1) * 0.5f, by - 20.0f, 10.5f, scale, kTextDim, aegis::ui::TextAlign::Center,
+                    aegis::ui::FontWeight::SemiBold);
+        }
+        draw_screen_vignette(renderer, camera);
         aegis::render::submit_ui(renderer, camera, ui);
         return;
     }
@@ -1216,6 +1399,93 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
     part_renderer.draw_plumes(renderer, flight->assembly(), origin_x, origin_y, fs.heading,
                               session.throttle(), now, flight->ignited_engines());
 
+    // --- staging separation FX: spark + smoke burst when a stage lets go ----
+    {
+        const auto& detached = flight->detached_stages();
+        const core::u32 detached_now = static_cast<core::u32>(detached.size());
+        if (detached_now > state.fx_seen_detached) {
+            const auto det_hash = [](core::u32 i, core::u32 salt) noexcept {
+                core::u32 h = (i + 1u) * 2654435761u ^ (salt * 40503u + 0x9E3779B9u);
+                h ^= h >> 16;
+                h *= 0x7FEB352Du;
+                h ^= h >> 15;
+                h *= 0x846CA68Bu;
+                h ^= h >> 16;
+                return static_cast<core::f32>(h & 0xFFFFFFu) / static_cast<core::f32>(0x1000000u);
+            };
+            for (core::u32 s = state.fx_seen_detached; s < detached_now; ++s) {
+                const core::f64 px = detached[s].state.position.x;
+                const core::f64 py = detached[s].state.position.y - kEarthRadius;
+                for (int j = 0; j < 16; ++j) {
+                    const core::u32 key = s * 64u + static_cast<core::u32>(j);
+                    const bool warm = j < 10;
+                    const core::f32 angle = det_hash(key, 0xA11u) * 6.2831853f;
+                    const core::f32 speed = 1.4f + 3.6f * det_hash(key, 0xB22u);
+                    SceneState::FxPuff puff{};
+                    puff.x = static_cast<core::f32>(px);
+                    puff.y = static_cast<core::f32>(py);
+                    puff.vx = static_cast<core::f32>(detached[s].state.velocity.x) * 0.85f +
+                              std::cos(angle) * speed;
+                    puff.vy = static_cast<core::f32>(detached[s].state.velocity.y) * 0.85f +
+                              std::sin(angle) * speed;
+                    puff.age = 0.0f;
+                    puff.life = warm ? 0.45f + 0.45f * det_hash(key, 0xC33u)
+                                     : 0.9f + 0.8f * det_hash(key, 0xD44u);
+                    puff.size0 = warm ? 0.45f + 0.65f * det_hash(key, 0xE55u)
+                                      : 0.9f + 1.7f * det_hash(key, 0xF66u);
+                    puff.warm = warm ? 1.0f : 0.0f;
+                    state.fx_puffs.push_back(puff);
+                }
+            }
+            state.fx_seen_detached = detached_now;
+        }
+        if (!state.fx_puffs.empty()) {
+            constexpr core::f32 kDt = 1.0f / 60.0f;
+            for (auto& puff : state.fx_puffs) {
+                puff.age += kDt;
+                puff.x += puff.vx * kDt;
+                puff.y += puff.vy * kDt;
+                const core::f32 drag = 1.0f - 1.5f * kDt;
+                puff.vx *= drag;
+                puff.vy *= drag;
+            }
+            for (std::size_t i = 0; i < state.fx_puffs.size();) {
+                if (state.fx_puffs[i].age >= state.fx_puffs[i].life) {
+                    state.fx_puffs[i] = state.fx_puffs.back();
+                    state.fx_puffs.pop_back();
+                } else {
+                    ++i;
+                }
+            }
+            for (const SceneState::FxPuff& puff : state.fx_puffs) {
+                const core::f32 t = puff.age / puff.life;
+                const core::f32 fade = 1.0f - t;
+                const core::f32 size = puff.size0 * (1.0f + 1.9f * t);
+                aegis::renderer2d::SpriteInstance fx{};
+                fx.x = puff.x;
+                fx.y = puff.y;
+                fx.width = size;
+                fx.height = size;
+                fx.rotation = 0.0f;
+                if (puff.warm > 0.5f) {
+                    fx.r = 1.0f;
+                    fx.g = 0.72f;
+                    fx.b = 0.33f;
+                    fx.a = fade * 0.85f;
+                    fx.softness = 0.75f;
+                    renderer.draw_particle(fx);  // additive — hot sparks
+                } else {
+                    fx.r = 0.78f;
+                    fx.g = 0.80f;
+                    fx.b = 0.85f;
+                    fx.a = fade * 0.34f;
+                    fx.softness = 0.9f;
+                    renderer.draw_sprite(fx);  // normal blend — grey smoke
+                }
+            }
+        }
+    }
+
     // Detached stages fall ballistically — keep rendering them.
     for (const aegis::physics::DetachedStage& detached : flight->detached_stages()) {
         const aegis::parts::MassProperties dmp = detached.assembly.mass_properties();
@@ -1229,6 +1499,7 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
                                     detached.state.position.y - kEarthRadius - doy, detached.state.heading,
                                     det_options);
     }
+    draw_screen_vignette(renderer, camera);
 
     // --- HUD -------------------------------------------------------------
     char buffer[160];
@@ -1255,6 +1526,10 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
     }
     ui.bar(24.0f, 132.0f, 212.0f, 13.0f, session.propellant_fraction(), aegis::ui::rgb(0.96f, 0.70f, 0.26f),
            aegis::ui::rgb(0.10f, 0.11f, 0.15f), aegis::ui::rgb(0.40f, 0.36f, 0.24f, 0.7f));
+    for (const float notch : {0.25f, 0.5f, 0.75f}) {
+        ui.fill_rect(24.0f + 212.0f * notch - 0.75f, 132.0f, 1.5f, 13.0f,
+                     aegis::ui::rgb(0.05f, 0.05f, 0.08f, 0.85f));
+    }
     ui.text(24.0f, 150.0f, 8.0f, "PROPELLANT", kTextFaint, aegis::ui::TextAlign::Left,
             aegis::ui::FontWeight::SemiBold);
 
@@ -1302,18 +1577,32 @@ void draw_flight(BatchRenderer& renderer, SceneState& state, const aegis::ui::Ui
     ui.text(16.0f, vh - 44.0f, 9.0f, "A/D OR Q/E  PITCH  ·  W/S  THROTTLE", kTextFaint);
     ui.text(16.0f, vh - 26.0f, 9.0f, "SPACE  STAGE  ·  M  MAP  ·  ESC  ABORT TO VAB", kTextFaint);
 
-    // Toast (fades after 3 s).
+    // Toast (fades after 3 s) — amber warning pill.
     if (now - session.toast_time() < 3.0 && !session.toast().empty()) {
-        ui.text(vw * 0.5f, vh * 0.16f, 15.0f, session.toast().c_str(), aegis::ui::rgb(0.98f, 0.88f, 0.45f),
-                aegis::ui::TextAlign::Center);
+        const char* msg = session.toast().c_str();
+        const float ty = vh * 0.16f;
+        const float tw = ui.text_width_px(msg, 13.0f, aegis::ui::FontWeight::SemiBold) + 44.0f;
+        const float tx = vw * 0.5f - tw * 0.5f;
+        ui.fill_rect(tx + 2.0f, ty - 6.0f + 2.0f, tw, 30.0f, aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.32f));
+        ui.fill_rect(tx, ty - 6.0f, tw, 30.0f, aegis::ui::rgb(0.105f, 0.10f, 0.075f, 0.96f));
+        ui.rect_outline(tx, ty - 6.0f, tw, 30.0f, aegis::ui::rgb(0.52f, 0.42f, 0.16f, 0.95f), 1.0f);
+        ui.fill_rect(tx, ty - 6.0f, 3.0f, 30.0f, aegis::ui::rgb(0.96f, 0.70f, 0.26f, 1.0f));
+        ui.text(vw * 0.5f, ty + 1.0f, 13.0f, msg, aegis::ui::rgb(0.98f, 0.88f, 0.45f, 1.0f),
+                aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
     }
 
-    // Impact splash.
+    // Impact splash — framed red stencil banner.
     if (session.impacted()) {
-        ui.text(vw * 0.5f, vh * 0.42f, 34.0f, "IMPACT", aegis::ui::rgb(1.0f, 0.55f, 0.4f),
-                aegis::ui::TextAlign::Center);
-        ui.text(vw * 0.5f, vh * 0.42f + 40.0f, 13.0f, "ESC RETURNS TO THE VAB", aegis::ui::rgb(0.75f, 0.7f, 0.65f),
-                aegis::ui::TextAlign::Center);
+        const float bw = 360.0f, bh = 92.0f;
+        const float bx = vw * 0.5f - bw * 0.5f, by = vh * 0.42f - 14.0f;
+        ui.fill_rect(bx + 3.0f, by + 4.0f, bw, bh, aegis::ui::rgb(0.0f, 0.0f, 0.0f, 0.35f));
+        ui.fill_rect(bx, by, bw, bh, aegis::ui::rgb(0.13f, 0.055f, 0.045f, 0.94f));
+        ui.rect_outline(bx, by, bw, bh, aegis::ui::rgb(0.75f, 0.25f, 0.16f, 1.0f), 1.5f);
+        ui.fill_rect(bx, by, bw, 3.0f, aegis::ui::rgb(0.95f, 0.35f, 0.22f, 1.0f));
+        ui.text(vw * 0.5f, by + 10.0f, 34.0f, "IMPACT", aegis::ui::rgb(1.0f, 0.55f, 0.4f),
+                aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
+        ui.text(vw * 0.5f, by + 54.0f, 12.0f, "ESC RETURNS TO THE VAB", aegis::ui::rgb(0.85f, 0.72f, 0.66f),
+                aegis::ui::TextAlign::Center, aegis::ui::FontWeight::SemiBold);
     }
 
     aegis::render::submit_ui(renderer, camera, ui);

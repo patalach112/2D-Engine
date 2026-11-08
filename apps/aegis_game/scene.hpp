@@ -55,6 +55,17 @@ struct SceneState {
     core::f64 map_cache_flight_time = 0.0;  ///< fs.time at the cache build (countdown base)
     core::f64 map_t_ap_s = -1.0;         ///< time to apoapsis (closed orbits; else -1)
     core::f64 map_t_pe_s = -1.0;         ///< time to periapsis (closed orbits; else -1)
+
+    // Staging-separation FX (render-side only): hot additive sparks plus a
+    // lingering grey-smoke ring at the moment a stage lets go. Positions are
+    // planet-centred world with y rebased by kEarthRadius (like everything else).
+    struct FxPuff {
+        core::f32 x, y, vx, vy;
+        core::f32 age, life, size0;
+        core::f32 warm;  ///< 1 = additive hot spark, 0 = lingering grey smoke
+    };
+    std::vector<FxPuff> fx_puffs;
+    core::u32 fx_seen_detached = 0;  ///< detached stages we already burst-puffed
 };
 
 void scene_state_init(SceneState& state) noexcept;

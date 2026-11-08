@@ -230,6 +230,35 @@ void PartRenderer::draw_plumes(aegis::renderer2d::BatchRenderer& renderer,
         instance.throttle = static_cast<core::f32>(throttle);
         instance.flags = 0.0f;
         renderer.draw_part(instance);
+        // Nozzle-exit glow: two layered additive cores. Sells "engine is
+        // alive" far better than the mach-diamond cone alone. Sizes follow the
+        // throttle; flicker stays in sync with the cone envelope.
+        // Nozzle tip in world coords (same frame math as the cone centre).
+        const core::f64 tip_wx = origin_x + lx * c - bottom * s;
+        const core::f64 tip_wy = origin_y + lx * s + bottom * c;
+        const core::f32 glow_flick = static_cast<core::f32>(0.82 + 0.18 * std::sin(clock_s * 37.0 + static_cast<core::f64>(index) * 2.3));
+        const core::f32 throttle_f = static_cast<core::f32>(throttle);
+        aegis::renderer2d::SpriteInstance glow{};
+        glow.x = static_cast<core::f32>(tip_wx);
+        glow.y = static_cast<core::f32>(tip_wy);
+        glow.rotation = static_cast<core::f32>(rot);
+        glow.softness = 0.85f;
+        // Wide amber wash.
+        glow.width = static_cast<core::f32>(width) * 1.35f;
+        glow.height = static_cast<core::f32>(width) * 1.35f;
+        glow.r = 1.0f;
+        glow.g = 0.62f;
+        glow.b = 0.22f;
+        glow.a = 0.42f * throttle_f * glow_flick;
+        renderer.draw_particle(glow);
+        // White-hot core.
+        glow.width = static_cast<core::f32>(width) * 0.62f;
+        glow.height = static_cast<core::f32>(width) * 0.62f;
+        glow.r = 1.0f;
+        glow.g = 0.93f;
+        glow.b = 0.72f;
+        glow.a = 0.62f * throttle_f * glow_flick;
+        renderer.draw_particle(glow);
     }
 }
 
