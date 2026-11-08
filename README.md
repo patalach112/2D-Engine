@@ -91,7 +91,30 @@ ctest --preset=debug
 The flight HUD shows T+, altitude, velocity, predicted apoapsis, an ORBIT/IMPACT-PREDICTED
 status line and the propellant drain; the staging panel on the right tracks which stage fires
 next. In the map view the predicted Keplerian trajectory is drawn live (AP/PE markers, prograde
-tick); **physics keeps running while the map is open** — burn, then check your apoapsis.
+tick, nice-round scale bar); **physics keeps running while the map is open** — burn, then check
+your apoapsis.
+
+### Visual overhaul (engine-wide)
+
+The renderer was overhauled to a single coherent engineering-dark look; every surface is
+crisp vector/SDF work — there is no raster art anywhere in the game:
+
+- **Planets**: layered spherical bodies — ocean rim, analytic disc, terminator shade, soft
+  cloud streaks, polar cap and a specular glint toward the light.
+- **Sky**: colour-temperature starfield (warm/cool classes) with camera-faded altitude blend
+  and haloed anchor stars.
+- **Exhaust**: mach-diamond SDF plume cones plus two layered additive nozzle-exit glows
+  (amber wash + white-hot core), flicker-synced with the throttle envelope.
+- **Staging FX**: detaching stages burst into additive sparks + lingering grey smoke that
+  advects and fades (render-side only).
+- **Framing**: quadratic cinematic vignette in flight/map; VAB gets a warm overhead wash and
+  distant gantry silhouettes for depth; the construction grid is Major/minor contrast-tuned.
+- **UI**: JetBrains Mono throughout (baked atlas, Regular + SemiBold); SFS-style part palette
+  with category tabs; bottom-centre spec card on hover; amber warning pills; framed impact
+  banner; propellant gauge with tick notches; map scale bar.
+
+Regenerate the captures with `./build/debug/tools/aegis_game_check/aegis_game_check qa2` —
+`qa2_aegis_game_vab.png`, `_flight.png`, `_map.png`.
 
 ### Headless / CI
 
